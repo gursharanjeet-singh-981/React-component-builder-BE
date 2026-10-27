@@ -1,8 +1,24 @@
 import { GoogleGenAI } from "@google/genai";
+import cors from "cors";
 import process from "node:process";
 
+const corsMiddleware = cors({ preflightContinue: true });
 
 export default async function handler(req, res) {
+
+    await new Promise((resolve, reject) => {
+        corsMiddleware(req, res, (error) => {
+            if (error) {
+                reject(error);
+            } else {
+                resolve();
+            }
+        });
+    });
+
+    if (req.method === "OPTIONS") {
+        return res.status(204).end();
+    }
     
     if (req.method !== "POST") {
         return res.status(405).json({

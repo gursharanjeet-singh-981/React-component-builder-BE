@@ -1,4 +1,5 @@
 import express from 'express'
+import cors from 'cors'
 import swaggerUi from 'swagger-ui-express'
 import { prisma } from './database.js'
 import { asyncHandler, handleApiError } from './api-utils.js'
@@ -6,7 +7,6 @@ import openapi from './openapi.js'
 import pagesRouter from './routes/pages.js'
 import themesRouter from './routes/themes.js'
 
-const cors = require('cors');
 const app = express()
 
 app.use(cors())
