@@ -5,8 +5,15 @@ import { asyncHandler, handleApiError } from './api-utils.js'
 import openapi from './openapi.js'
 import pagesRouter from './routes/pages.js'
 import themesRouter from './routes/themes.js'
+import { applyCors } from '../../api/_lib/cors.js'
 
 const app = express()
+
+app.use((req, res, next) => {
+  if (applyCors(req, res)) {
+    next()
+  }
+})
 
 app.use(express.json({ limit: '10mb' }))
 
