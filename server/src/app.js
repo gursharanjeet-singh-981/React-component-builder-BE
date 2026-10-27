@@ -9,7 +9,19 @@ import themesRouter from './routes/themes.js'
 
 const app = express()
 
-app.use(cors())
+const allowedOrigins = new Set(
+  (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
+)
+
+app.use(cors({
+  origin(origin, callback) {
+    callback(null, !origin || allowedOrigins.has(origin.replace(/\/+$/, '')))
+  },
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+}))
 
 app.use(express.json({ limit: '10mb' }))
 
