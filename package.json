@@ -1,13 +1,9 @@
 {
-  "name": "component-builder",
+  "name": "component-builder-be",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
     "server": "node --watch server/src/index.js",
     "db:generate": "node scripts/prisma.js generate",
     "db:migrate": "node scripts/prisma.js migrate dev",
@@ -15,36 +11,12 @@
     "start": "node --watch server/src/index.js"
   },
   "dependencies": {
-    "@babel/standalone": "^7.29.9",
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/modifiers": "^9.0.0",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
     "@google/genai": "^2.20.0",
     "@prisma/client": "^6.19.0",
     "express": "^4.22.3",
-    "lucide-react": "^1.17.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "react-router-dom": "^7.18.2",
-    "swagger-ui-express": "^5.0.1",
-    "zustand": "^5.0.14"
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "autoprefixer": "^10.5.0",
-    "eslint": "^10.3.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.6.0",
-    "postcss": "^8.5.15",
-    "prisma": "^6.19.0",
-    "sass": "^1.106.1",
-    "tailwindcss": "^3.4.19",
-    "tinyglobby": "^0.2.17",
-    "vite": "^8.0.12"
+    "prisma": "^6.19.0"
   }
 }
