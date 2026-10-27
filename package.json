@@ -15,6 +15,7 @@
   "dependencies": {
     "@google/genai": "^2.20.0",
     "@prisma/client": "^6.19.0",
+    "cors": "^2.8.6",
     "express": "^4.22.3",
     "swagger-ui-express": "^5.0.1"
   },
