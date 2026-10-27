@@ -4,11 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "build": "prisma generate",
+    "start": "node --watch server/src/index.js",
     "server": "node --watch server/src/index.js",
     "db:generate": "node scripts/prisma.js generate",
     "db:migrate": "node scripts/prisma.js migrate dev",
-    "db:deploy": "node scripts/prisma.js migrate deploy",
-    "start": "node --watch server/src/index.js"
+    "db:deploy": "node scripts/prisma.js migrate deploy"
   },
   "dependencies": {
     "@google/genai": "^2.20.0",
