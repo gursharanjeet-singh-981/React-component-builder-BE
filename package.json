@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "prisma generate",
+    "postinstall": "prisma generate",
     "start": "node --watch server/src/index.js",
     "server": "node --watch server/src/index.js",
     "db:generate": "node scripts/prisma.js generate",
