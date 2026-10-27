@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Theme {
+  id         String   @id @default(uuid())
+  name       String
+  slug       String   @unique
+  configJson Json
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  pages      Page[]
+}
+
+model Page {
+  id          String     @id @default(uuid())
+  name        String
+  slug        String     @unique
+
+  themeId     String
+  theme       Theme      @relation(fields: [themeId], references: [id], onDelete: Restrict)
+
+  status      PageStatus @default(DRAFT)
+  contentJson Json
+  version     Int        @default(1)
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+enum PageStatus {
+  DRAFT
+  PUBLISHED
+}
