@@ -11,7 +11,7 @@ Use your configured port or deployed backend host instead of `localhost:3001`
 when applicable. Swagger UI sends requests to the same host that serves the
 documentation. Expand an operation and select **Try it out** to call the API.
 These calls use the real database, including creates, updates, and deletes.
-No authentication is currently required.
+Use **Authorize** with a bearer token before trying theme or page operations.
 
 Frontend developers can import the JSON URL into Postman or an OpenAPI client
 generator. For a theme/page workflow, create a theme first and replace the
@@ -39,6 +39,50 @@ response bodies, and return errors in this format:
 Successful resource responses use `{ "data": ... }`; list endpoints return
 `{ "data": [...] }`. Delete endpoints return `204 No Content`.
 
+## Authentication
+
+Authentication uses email and password. User accounts have access to the same
+shared themes and pages; resources are not currently scoped to individual
+users. Health checks and API documentation remain public.
+
+Set `JWT_SECRET` in the server environment to a random secret of at least 32
+bytes. For example, generate one with
+`node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`.
+Keep it private and use the same value across backend instances.
+
+### `POST /api/auth/register`
+
+Creates an account and returns a bearer access token. Email addresses are
+trimmed and stored in lowercase. Passwords must be non-empty; no minimum
+length, maximum length, or complexity rules are enforced.
+
+```json
+{
+  "email": "user@example.com",
+  "password": "strong-password"
+}
+```
+
+The `201` response contains `data.user`, `data.accessToken`,
+`data.tokenType` (`Bearer`), and `data.expiresIn` (seconds). A duplicate email
+returns `409 CONFLICT`.
+
+### `POST /api/auth/login`
+
+Accepts the same email/password body and returns the same token response.
+Incorrect credentials return `401 INVALID_CREDENTIALS`.
+
+### `GET /api/auth/me`
+
+Returns the current user. Send the token in the request header:
+
+```text
+Authorization: Bearer <accessToken>
+```
+
+Access tokens expire after one hour. There is no refresh or logout endpoint;
+clients should log in again after expiration.
+
 ## Health
 
 ### `GET /api/health`
@@ -49,6 +93,8 @@ Checks the database connection.
 - `503`: `{ "status": "error", "database": "unavailable", ... }`
 
 ## Themes
+
+All theme and page operations require a valid bearer token.
 
 ### `GET /api/themes`
 
@@ -146,6 +192,7 @@ Deletes a page.
 | `201` | Resource created |
 | `204` | Resource deleted |
 | `400` | Invalid JSON, invalid field, or missing required field |
+| `401` | Missing, invalid, or expired access token (or invalid login credentials) |
 | `404` | Resource or API endpoint not found |
 | `409` | Duplicate slug, missing referenced theme, or restricted delete |
 | `413` | Request body exceeds 10 MB |
@@ -155,14 +202,13 @@ Deletes a page.
 ## Database setup and migrations
 
 1. Set `DATABASE_URL` in the project-root `.env` file.
-2. For PostgreSQL providers requiring a custom CA, set `DATABASE_CA_BASE64` to
+2. Set `JWT_SECRET` to a random secret of at least 32 bytes.
+3. For PostgreSQL providers requiring a custom CA, set `DATABASE_CA_BASE64` to
    the Base64-encoded PEM. The API verifies the server certificate and hostname
    when this value is set. It is optional for local databases.
-3. Generate Prisma Client with `npm run db:generate`.
-4. Create/apply a development migration with
-   `npm run db:migrate -- --name init`; deploy committed migrations with
-   `npm run db:deploy`.
-5. Start the API with `npm run server`.
+4. Generate Prisma Client with `npm run db:generate`.
+5. Apply committed migrations with `npm run db:deploy`.
+6. Start the API with `npm run server`.
 
 The Prisma schema is in `prisma/schema.prisma`. Do not expose database
 credentials through `VITE_`-prefixed variables.

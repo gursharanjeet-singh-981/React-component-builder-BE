@@ -18,6 +18,8 @@ const requestBody = (schema) => ({
 })
 
 const readErrors = { 500: responseRef('InternalError') }
+const authErrors = { 401: responseRef('Unauthorized') }
+const bearerSecurity = [{ bearerAuth: [] }]
 const writeErrors = {
   400: responseRef('BadRequest'),
   409: responseRef('Conflict'),
@@ -71,15 +73,59 @@ const openapi = {
   info: {
     title: 'Component Builder API',
     version: '1.0.0',
-    description: 'API for builder themes and pages. No authentication is currently required. Resource responses use a data envelope; errors use an error envelope. JSON request bodies are limited to 10 MB. Create a theme first, then use its ID to create pages.',
+    description: 'API for builder themes and pages. To try protected endpoints in Swagger: (1) call POST /api/auth/register or POST /api/auth/login with email and password; (2) copy data.accessToken from the response; (3) select Authorize and enter the token (without the word Bearer); (4) call the locked theme and page endpoints. User accounts share the same themes and pages. Health and documentation endpoints remain public. Resource responses use a data envelope; errors use an error envelope. JSON request bodies are limited to 10 MB. Create a theme first, then use its ID to create pages.',
   },
   servers: [{ url: '/', description: 'Current host (local development or deployed API)' }],
   tags: [
     { name: 'Health', description: 'Backend and database availability.' },
+    { name: 'Authentication', description: 'Email/password registration, login, and current-user lookup.' },
     { name: 'Themes', description: 'Theme configuration and page counts.' },
     { name: 'Pages', description: 'Page content, versions, and publishing.' },
   ],
   paths: {
+    '/api/auth/register': {
+      post: {
+        tags: ['Authentication'],
+        operationId: 'register',
+        summary: 'Register an account and get an access token',
+        description: 'Use Try it out with an email and any non-empty password. The response includes data.accessToken. Copy that value and select Authorize to call protected endpoints.',
+        requestBody: requestBody('Credentials'),
+        responses: {
+          201: dataResponse('Account created and bearer access token issued.', 'AuthSession'),
+          400: responseRef('BadRequest'),
+          409: responseRef('Conflict'),
+          ...readErrors,
+        },
+      },
+    },
+    '/api/auth/login': {
+      post: {
+        tags: ['Authentication'],
+        operationId: 'login',
+        summary: 'Log in and get an access token',
+        description: 'Use Try it out with the registered email and password. Copy data.accessToken from the response, then select Authorize and paste the token without the word Bearer.',
+        requestBody: requestBody('Credentials'),
+        responses: {
+          200: dataResponse('Bearer access token issued.', 'AuthSession'),
+          400: responseRef('BadRequest'),
+          401: errorResponse('Email or password is incorrect.', 'INVALID_CREDENTIALS', 'Email or password is incorrect.'),
+          ...readErrors,
+        },
+      },
+    },
+    '/api/auth/me': {
+      get: {
+        tags: ['Authentication'],
+        operationId: 'getCurrentUser',
+        summary: 'Get the authenticated user',
+        security: bearerSecurity,
+        responses: {
+          200: dataResponse('Current user.', 'CurrentUser'),
+          ...authErrors,
+          ...readErrors,
+        },
+      },
+    },
     '/api/health': {
       get: {
         tags: ['Health'],
@@ -96,15 +142,17 @@ const openapi = {
         tags: ['Themes'],
         operationId: 'listThemes',
         summary: 'List themes',
+        security: bearerSecurity,
         description: 'Returns all themes, newest first, including each theme\'s page count. No pagination.',
-        responses: { 200: dataResponse('Themes with page counts.', 'ThemeWithCount', true), ...readErrors },
+        responses: { 200: dataResponse('Themes with page counts.', 'ThemeWithCount', true), ...authErrors, ...readErrors },
       },
       post: {
         tags: ['Themes'],
         operationId: 'createTheme',
         summary: 'Create a theme',
+        security: bearerSecurity,
         requestBody: requestBody('CreateTheme'),
-        responses: { 201: dataResponse('Theme created.', 'Theme'), ...writeErrors },
+        responses: { 201: dataResponse('Theme created.', 'Theme'), ...authErrors, ...writeErrors },
       },
     },
     '/api/themes/{id}': {
@@ -113,22 +161,25 @@ const openapi = {
         tags: ['Themes'],
         operationId: 'getTheme',
         summary: 'Get a theme',
-        responses: { 200: dataResponse('Theme with page count.', 'ThemeWithCount'), ...notFound, ...readErrors },
+        security: bearerSecurity,
+        responses: { 200: dataResponse('Theme with page count.', 'ThemeWithCount'), ...authErrors, ...notFound, ...readErrors },
       },
       patch: {
         tags: ['Themes'],
         operationId: 'updateTheme',
         summary: 'Update a theme',
+        security: bearerSecurity,
         description: 'Provide at least one supported field. configJson replaces the entire stored document.',
         requestBody: requestBody('UpdateTheme'),
-        responses: { 200: dataResponse('Theme updated.', 'Theme'), ...writeErrors, ...notFound },
+        responses: { 200: dataResponse('Theme updated.', 'Theme'), ...authErrors, ...writeErrors, ...notFound },
       },
       delete: {
         tags: ['Themes'],
         operationId: 'deleteTheme',
         summary: 'Delete a theme',
+        security: bearerSecurity,
         description: 'Delete the theme\'s pages first. A theme referenced by pages cannot be deleted.',
-        responses: { 204: { description: 'Theme deleted. No response body.' }, 409: responseRef('Conflict'), ...notFound, ...readErrors },
+        responses: { 204: { description: 'Theme deleted. No response body.' }, 409: responseRef('Conflict'), ...authErrors, ...notFound, ...readErrors },
       },
     },
     '/api/pages': {
@@ -136,20 +187,22 @@ const openapi = {
         tags: ['Pages'],
         operationId: 'listPages',
         summary: 'List pages',
+        security: bearerSecurity,
         description: 'Returns all matching pages, newest first, with a theme summary. Filters may be combined. No pagination.',
         parameters: [
           { name: 'themeId', in: 'query', description: 'Filter by theme ID.', schema: text },
           { name: 'status', in: 'query', description: 'Filter by page status.', schema: schemaRef('PageStatus') },
         ],
-        responses: { 200: dataResponse('Pages with theme summaries.', 'PageWithTheme', true), 400: responseRef('BadRequest'), ...readErrors },
+        responses: { 200: dataResponse('Pages with theme summaries.', 'PageWithTheme', true), 400: responseRef('BadRequest'), ...authErrors, ...readErrors },
       },
       post: {
         tags: ['Pages'],
         operationId: 'createPage',
         summary: 'Create a page',
+        security: bearerSecurity,
         description: 'The theme must exist. New pages start at version 1; status defaults to DRAFT.',
         requestBody: requestBody('CreatePage'),
-        responses: { 201: dataResponse('Page created.', 'Page'), ...writeErrors },
+        responses: { 201: dataResponse('Page created.', 'Page'), ...authErrors, ...writeErrors },
       },
     },
     '/api/pages/{id}': {
@@ -158,21 +211,24 @@ const openapi = {
         tags: ['Pages'],
         operationId: 'getPage',
         summary: 'Get a page',
-        responses: { 200: dataResponse('Page with theme summary.', 'PageWithTheme'), ...notFound, ...readErrors },
+        security: bearerSecurity,
+        responses: { 200: dataResponse('Page with theme summary.', 'PageWithTheme'), ...authErrors, ...notFound, ...readErrors },
       },
       patch: {
         tags: ['Pages'],
         operationId: 'updatePage',
         summary: 'Update a page',
+        security: bearerSecurity,
         description: 'Provide at least one supported field. Updating contentJson replaces the document and increments version by 1, even if content is unchanged. Other updates do not increment version.',
         requestBody: requestBody('UpdatePage'),
-        responses: { 200: dataResponse('Page updated.', 'Page'), ...writeErrors, ...notFound },
+        responses: { 200: dataResponse('Page updated.', 'Page'), ...authErrors, ...writeErrors, ...notFound },
       },
       delete: {
         tags: ['Pages'],
         operationId: 'deletePage',
         summary: 'Delete a page',
-        responses: { 204: { description: 'Page deleted. No response body.' }, ...notFound, ...readErrors },
+        security: bearerSecurity,
+        responses: { 204: { description: 'Page deleted. No response body.' }, ...authErrors, ...notFound, ...readErrors },
       },
     },
     '/api/pages/{id}/publish': {
@@ -181,13 +237,50 @@ const openapi = {
         tags: ['Pages'],
         operationId: 'publishPage',
         summary: 'Publish a page',
+        security: bearerSecurity,
         description: 'Sets status to PUBLISHED without changing version. No request body is required; already-published pages remain published.',
-        responses: { 200: dataResponse('Published page.', 'Page'), ...notFound, ...readErrors },
+        responses: { 200: dataResponse('Published page.', 'Page'), ...authErrors, ...notFound, ...readErrors },
       },
     },
   },
   components: {
+    securitySchemes: {
+      bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+    },
     schemas: {
+      User: {
+        type: 'object',
+        required: ['id', 'email', 'createdAt'],
+        properties: {
+          id: { type: 'string', format: 'uuid', readOnly: true },
+          email: { type: 'string', format: 'email' },
+          createdAt: { type: 'string', format: 'date-time', readOnly: true },
+        },
+      },
+      Credentials: {
+        type: 'object',
+        required: ['email', 'password'],
+        properties: {
+          email: { type: 'string', format: 'email', maxLength: 254 },
+          password: { type: 'string', minLength: 1 },
+        },
+        example: { email: 'user@example.com', password: 'strong-password' },
+      },
+      AuthSession: {
+        type: 'object',
+        required: ['user', 'accessToken', 'tokenType', 'expiresIn'],
+        properties: {
+          user: schemaRef('User'),
+          accessToken: { type: 'string' },
+          tokenType: { type: 'string', enum: ['Bearer'] },
+          expiresIn: { type: 'integer', example: 3600 },
+        },
+      },
+      CurrentUser: {
+        type: 'object',
+        required: ['user'],
+        properties: { user: schemaRef('User') },
+      },
       JsonDocument: {
         description: 'A JSON object or array with arbitrary nested JSON values. Scalars and null are not accepted at the top level.',
         oneOf: [{ type: 'object', additionalProperties: true }, { type: 'array', items: {} }],
@@ -248,7 +341,7 @@ const openapi = {
             type: 'object',
             required: ['code', 'message'],
             properties: {
-              code: { type: 'string', enum: ['VALIDATION_ERROR', 'INVALID_JSON', 'NOT_FOUND', 'CONFLICT', 'PAYLOAD_TOO_LARGE', 'INTERNAL_ERROR'] },
+              code: { type: 'string', enum: ['VALIDATION_ERROR', 'INVALID_JSON', 'NOT_FOUND', 'CONFLICT', 'PAYLOAD_TOO_LARGE', 'UNAUTHORIZED', 'INVALID_CREDENTIALS', 'INTERNAL_ERROR'] },
               message: { type: 'string' },
             },
           },
@@ -276,8 +369,9 @@ const openapi = {
     },
     responses: {
       BadRequest: errorResponse('Field validation failed (VALIDATION_ERROR) or the request body is malformed JSON (INVALID_JSON).', 'VALIDATION_ERROR', 'Provide at least one field to update.'),
+      Unauthorized: errorResponse('A valid bearer access token is required or the token has expired.', 'UNAUTHORIZED', 'A valid bearer access token is required.'),
       NotFound: errorResponse('The resource was not found.', 'NOT_FOUND', 'The requested record was not found.'),
-      Conflict: errorResponse('Duplicate slug, missing referenced theme, or a theme still referenced by pages.', 'CONFLICT', 'A record with that slug already exists.'),
+      Conflict: errorResponse('A unique value already exists, a referenced theme is missing, or a theme is still referenced by pages.', 'CONFLICT', 'A record with the provided unique value already exists.'),
       PayloadTooLarge: errorResponse('Request body exceeds the 10 MB limit.', 'PAYLOAD_TOO_LARGE', 'Request body exceeds the 10 MB limit.'),
       InternalError: errorResponse('An unexpected server error occurred.', 'INTERNAL_ERROR', 'An unexpected server error occurred.'),
     },

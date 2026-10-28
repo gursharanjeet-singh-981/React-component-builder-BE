@@ -2,10 +2,12 @@ import process from 'node:process'
 import app from './app.js'
 import { cleanupDatabaseConfig } from './database-config.js'
 import { prisma } from './database.js'
+import { assertAuthConfiguration } from './auth-service.js'
 
 const port = Number(process.env.PORT) || 3001
 
 try {
+  assertAuthConfiguration()
   await prisma.$connect()
   const server = app.listen(port, () => {
     console.log(`Backend listening on http://localhost:${port}; database connected`)
@@ -26,7 +28,7 @@ try {
     })
   }
 } catch (error) {
-  console.error('Database connection failed:', error)
+  console.error('Backend startup failed:', error)
   await prisma.$disconnect()
   cleanupDatabaseConfig()
   process.exitCode = 1
