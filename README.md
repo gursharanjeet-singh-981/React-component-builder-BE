@@ -37,7 +37,10 @@ Replace the placeholder `DATABASE_URL` in the project-root `.env` file with your
 PostgreSQL connection URL, including the actual username, password, host, port,
 and database name. URL-encode special characters in the username and password.
 The database must already exist and be reachable. Do not commit `.env` or share
-its contents. Restart `npm run server` after changing environment variables.
+its contents. Set `JWT_SECRET` to a random secret of at least 32 bytes (for
+example, generate one with
+`node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`).
+Restart `npm run server` after changing environment variables.
 
 If the PostgreSQL provider
 requires a custom CA, also set `DATABASE_CA_BASE64` to its Base64-encoded PEM;
@@ -47,10 +50,14 @@ for a local database except for `DATABASE_URL`. The `.env` file may also contain
 the `VITE_` prefix.
 
 Run `npm run db:generate` after changing the Prisma schema. Use
-`npm run db:migrate -- --name init` to create and apply a development migration,
-or `npm run db:deploy` to apply committed migrations. Start the backend with
+`npm run db:deploy` to apply committed migrations. Start the backend with
 `npm run server`; it listens on port 3001 by default (override with `PORT`) and
 checks the database before accepting requests.
+
+Authentication uses `POST /api/auth/register` and `POST /api/auth/login` to
+obtain a one-hour bearer token. Supply it as `Authorization: Bearer <token>` for
+all `/api/themes` and `/api/pages` requests. See [API.md](./API.md) for request
+examples and the current-user endpoint.
 
 ## Expanding the ESLint configuration
 

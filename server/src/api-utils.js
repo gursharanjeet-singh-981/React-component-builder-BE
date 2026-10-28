@@ -47,7 +47,7 @@ export function handleApiError(error, req, res, next) {
 
   if (error?.code === 'P2002') {
     res.status(409).json({
-      error: { code: 'CONFLICT', message: 'A record with that slug already exists.' },
+      error: { code: 'CONFLICT', message: 'A record with the provided unique value already exists.' },
     })
     return
   }

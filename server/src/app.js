@@ -6,6 +6,8 @@ import { asyncHandler, handleApiError } from './api-utils.js'
 import openapi from './openapi.js'
 import pagesRouter from './routes/pages.js'
 import themesRouter from './routes/themes.js'
+import authRouter from './routes/auth.js'
+import { requireAuthentication } from './auth-middleware.js'
 
 const app = express()
 
@@ -50,8 +52,9 @@ app.get('/api/health', asyncHandler(async (req, res) => {
   }
 }))
 
-app.use('/api/themes', themesRouter)
-app.use('/api/pages', pagesRouter)
+app.use('/api/auth', authRouter)
+app.use('/api/themes', requireAuthentication, themesRouter)
+app.use('/api/pages', requireAuthentication, pagesRouter)
 
 app.use('/api', (req, res) => {
   res.status(404).json({
