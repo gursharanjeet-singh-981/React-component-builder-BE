@@ -42,6 +42,13 @@ example, generate one with
 `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`).
 Restart `npm run server` after changing environment variables.
 
+For local frontend development, the API allows `http://localhost:5173` and
+`http://127.0.0.1:5173` by default when `NODE_ENV` is not `production`. Set
+`CORS_ORIGINS` to a comma-separated list of exact frontend origins for other
+origins and deployments (for example, `https://app.example.com`). In
+production, no browser origins are allowed unless explicitly listed. Restart
+the API after changing this setting.
+
 If the PostgreSQL provider
 requires a custom CA, also set `DATABASE_CA_BASE64` to its Base64-encoded PEM;
 the backend verifies the certificate and hostname. These variables are optional
