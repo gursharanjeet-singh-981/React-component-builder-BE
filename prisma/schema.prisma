@@ -8,15 +8,19 @@ datasource db {
 }
 
 model Theme {
-  id         String   @id @default(uuid())
+  id         String  @id @default(uuid())
+  userId     String?
+  user       User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
   name       String
-  slug       String   @unique
+  slug       String
   configJson Json
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  pages      Page[]
+  pages Page[]
+
+  @@unique([userId, slug])
 }
 
 model User {
@@ -24,22 +28,29 @@ model User {
   email        String   @unique
   passwordHash String
   createdAt    DateTime @default(now())
+
+  themes Theme[]
+  pages  Page[]
 }
 
 model Page {
-  id          String     @id @default(uuid())
-  name        String
-  slug        String     @unique
+  id     String  @id @default(uuid())
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name   String
+  slug   String
 
-  themeId     String
-  theme       Theme      @relation(fields: [themeId], references: [id], onDelete: Restrict)
+  themeId String
+  theme   Theme  @relation(fields: [themeId], references: [id], onDelete: Restrict)
 
   status      PageStatus @default(DRAFT)
   contentJson Json
   version     Int        @default(1)
 
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, slug])
 }
 
 enum PageStatus {

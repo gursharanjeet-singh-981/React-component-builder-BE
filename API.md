@@ -41,9 +41,10 @@ Successful resource responses use `{ "data": ... }`; list endpoints return
 
 ## Authentication
 
-Authentication uses email and password. User accounts have access to the same
-shared themes and pages; resources are not currently scoped to individual
-users. Health checks and API documentation remain public.
+Authentication uses email and password. Users can access only the themes and
+pages they own. Health checks and API documentation remain public. Attempts to
+read, modify, publish, or delete another user's resource return `404 NOT_FOUND`,
+just like a resource that does not exist.
 
 Set `JWT_SECRET` in the server environment to a random secret of at least 32
 bytes. For example, generate one with
@@ -98,7 +99,8 @@ All theme and page operations require a valid bearer token.
 
 ### `GET /api/themes`
 
-Lists themes, newest first. Each theme includes `_count.pages`.
+Lists the authenticated user's themes, newest first. Each theme includes
+`_count.pages`. Theme slugs are unique per user.
 
 ### `POST /api/themes`
 
@@ -124,19 +126,22 @@ Gets one theme by its ID, including `_count.pages`.
 
 ### `PATCH /api/themes/:id`
 
-Updates any subset of `name`, `slug`, and `configJson`. At least one field is
-required. `configJson` must be a JSON object or array.
+Updates any subset of `name`, `slug`, and `configJson` on a theme owned by the
+authenticated user. At least one field is required. `configJson` must be a
+JSON object or array.
 
 ### `DELETE /api/themes/:id`
 
-Deletes a theme if it has no pages. Returns `409 CONFLICT` while pages still
+Deletes a theme owned by the authenticated user if it has no pages. Returns
+`404 NOT_FOUND` for another user's theme and `409 CONFLICT` while pages still
 reference it (`onDelete: Restrict`).
 
 ## Pages
 
 ### `GET /api/pages`
 
-Lists pages, newest first. Optionally filter with `themeId` and/or `status`:
+Lists the authenticated user's pages, newest first. Optionally filter with
+`themeId` and/or `status`:
 
 ```text
 GET /api/pages?themeId=<theme-id>&status=PUBLISHED
@@ -147,7 +152,9 @@ Valid statuses are `DRAFT` and `PUBLISHED`. Each result includes its theme's
 
 ### `POST /api/pages`
 
-Creates a page. The referenced theme must exist.
+Creates a page owned by the authenticated user. The referenced theme must
+belong to that same user; a missing or other user's theme returns
+`404 NOT_FOUND`. Page slugs are unique per user.
 
 Required body:
 
@@ -172,17 +179,18 @@ Gets one page by its ID, including its theme's `id`, `name`, and `slug`.
 
 ### `PATCH /api/pages/:id`
 
-Updates any subset of `name`, `slug`, `themeId`, `contentJson`, and `status`.
-At least one field is required. Updating `contentJson` increments `version`;
-other field updates do not.
+Updates any subset of `name`, `slug`, `themeId`, `contentJson`, and `status` on
+a page owned by the authenticated user. Any replacement theme must also belong
+to that user. At least one field is required. Updating `contentJson` increments
+`version`; other field updates do not.
 
 ### `POST /api/pages/:id/publish`
 
-Sets the page status to `PUBLISHED`.
+Sets the authenticated user's page status to `PUBLISHED`.
 
 ### `DELETE /api/pages/:id`
 
-Deletes a page.
+Deletes a page owned by the authenticated user.
 
 ## Common status codes
 
@@ -209,6 +217,11 @@ Deletes a page.
 4. Generate Prisma Client with `npm run db:generate`.
 5. Apply committed migrations with `npm run db:deploy`.
 6. Start the API with `npm run server`.
+
+The user-scoping migration leaves pre-existing themes and pages unassigned
+(`userId` is null), so they are not visible through the API. Their records are
+preserved; assign them to the appropriate user through a trusted, reviewed
+data migration if they need to be retained as user-owned resources.
 
 The Prisma schema is in `prisma/schema.prisma`. Do not expose database
 credentials through `VITE_`-prefixed variables.

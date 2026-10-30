@@ -41,13 +41,13 @@ const timestamps = {
 }
 const themeFields = {
   name: { ...text, example: 'Brand' },
-  slug: { ...text, example: 'brand', description: 'Non-blank, unique theme slug. Leading and trailing whitespace is trimmed.' },
+  slug: { ...text, example: 'brand', description: 'Non-blank theme slug, unique per user. Leading and trailing whitespace is trimmed.' },
   configJson: schemaRef('JsonDocument'),
 }
 const pageFields = {
   name: { ...text, example: 'Home' },
-  slug: { ...text, example: 'home', description: 'Non-blank, unique page slug. Leading and trailing whitespace is trimmed.' },
-  themeId: { ...text, description: 'ID of an existing theme.' },
+  slug: { ...text, example: 'home', description: 'Non-blank page slug, unique per user. Leading and trailing whitespace is trimmed.' },
+  themeId: { ...text, description: 'ID of a theme owned by the authenticated user.' },
   contentJson: schemaRef('JsonDocument'),
   status: schemaRef('PageStatus'),
 }
@@ -73,7 +73,7 @@ const openapi = {
   info: {
     title: 'Component Builder API',
     version: '1.0.0',
-    description: 'API for builder themes and pages. To try protected endpoints in Swagger: (1) call POST /api/auth/register or POST /api/auth/login with email and password; (2) copy data.accessToken from the response; (3) select Authorize and enter the token (without the word Bearer); (4) call the locked theme and page endpoints. User accounts share the same themes and pages. Health and documentation endpoints remain public. Resource responses use a data envelope; errors use an error envelope. JSON request bodies are limited to 10 MB. Create a theme first, then use its ID to create pages.',
+    description: 'API for builder themes and pages. To try protected endpoints in Swagger: (1) call POST /api/auth/register or POST /api/auth/login with email and password; (2) copy data.accessToken from the response; (3) select Authorize and enter the token (without the word Bearer); (4) call the locked theme and page endpoints. Themes and pages are scoped to their owner; pages can only reference themes owned by the same user. Health and documentation endpoints remain public. Resource responses use a data envelope; errors use an error envelope. JSON request bodies are limited to 10 MB. Create a theme first, then use its ID to create pages.',
   },
   servers: [{ url: '/', description: 'Current host (local development or deployed API)' }],
   tags: [
@@ -143,7 +143,7 @@ const openapi = {
         operationId: 'listThemes',
         summary: 'List themes',
         security: bearerSecurity,
-        description: 'Returns all themes, newest first, including each theme\'s page count. No pagination.',
+        description: 'Returns the authenticated user\'s themes, newest first, including each theme\'s page count. Theme slugs are unique per user. No pagination.',
         responses: { 200: dataResponse('Themes with page counts.', 'ThemeWithCount', true), ...authErrors, ...readErrors },
       },
       post: {
@@ -169,7 +169,7 @@ const openapi = {
         operationId: 'updateTheme',
         summary: 'Update a theme',
         security: bearerSecurity,
-        description: 'Provide at least one supported field. configJson replaces the entire stored document.',
+        description: 'Updates a theme owned by the authenticated user. Provide at least one supported field. configJson replaces the entire stored document.',
         requestBody: requestBody('UpdateTheme'),
         responses: { 200: dataResponse('Theme updated.', 'Theme'), ...authErrors, ...writeErrors, ...notFound },
       },
@@ -178,7 +178,7 @@ const openapi = {
         operationId: 'deleteTheme',
         summary: 'Delete a theme',
         security: bearerSecurity,
-        description: 'Delete the theme\'s pages first. A theme referenced by pages cannot be deleted.',
+        description: 'Delete the owned theme\'s pages first. A theme referenced by pages cannot be deleted. Other users\' themes are not accessible.',
         responses: { 204: { description: 'Theme deleted. No response body.' }, 409: responseRef('Conflict'), ...authErrors, ...notFound, ...readErrors },
       },
     },
@@ -188,7 +188,7 @@ const openapi = {
         operationId: 'listPages',
         summary: 'List pages',
         security: bearerSecurity,
-        description: 'Returns all matching pages, newest first, with a theme summary. Filters may be combined. No pagination.',
+        description: 'Returns the authenticated user\'s matching pages, newest first, with a theme summary. Filters may be combined. No pagination.',
         parameters: [
           { name: 'themeId', in: 'query', description: 'Filter by theme ID.', schema: text },
           { name: 'status', in: 'query', description: 'Filter by page status.', schema: schemaRef('PageStatus') },
@@ -200,9 +200,9 @@ const openapi = {
         operationId: 'createPage',
         summary: 'Create a page',
         security: bearerSecurity,
-        description: 'The theme must exist. New pages start at version 1; status defaults to DRAFT.',
+        description: 'The theme must belong to the authenticated user. New pages are owned by that user, start at version 1, and default to DRAFT.',
         requestBody: requestBody('CreatePage'),
-        responses: { 201: dataResponse('Page created.', 'Page'), ...authErrors, ...writeErrors },
+        responses: { 201: dataResponse('Page created.', 'Page'), ...authErrors, ...writeErrors, ...notFound },
       },
     },
     '/api/pages/{id}': {
@@ -219,7 +219,7 @@ const openapi = {
         operationId: 'updatePage',
         summary: 'Update a page',
         security: bearerSecurity,
-        description: 'Provide at least one supported field. Updating contentJson replaces the document and increments version by 1, even if content is unchanged. Other updates do not increment version.',
+        description: 'Updates a page owned by the authenticated user. Any replacement theme must also belong to that user. Provide at least one supported field. Updating contentJson replaces the document and increments version by 1, even if content is unchanged. Other updates do not increment version.',
         requestBody: requestBody('UpdatePage'),
         responses: { 200: dataResponse('Page updated.', 'Page'), ...authErrors, ...writeErrors, ...notFound },
       },
@@ -238,7 +238,7 @@ const openapi = {
         operationId: 'publishPage',
         summary: 'Publish a page',
         security: bearerSecurity,
-        description: 'Sets status to PUBLISHED without changing version. No request body is required; already-published pages remain published.',
+        description: 'Sets the owned page status to PUBLISHED without changing version. No request body is required; already-published pages remain published.',
         responses: { 200: dataResponse('Published page.', 'Page'), ...authErrors, ...notFound, ...readErrors },
       },
     },
