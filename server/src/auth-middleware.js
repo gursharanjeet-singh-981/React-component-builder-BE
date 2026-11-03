@@ -16,7 +16,7 @@ export const requireAuthentication = asyncHandler(async (req, res, next) => {
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, createdAt: true },
+    select: { id: true, email: true, name: true, profileImage: true, createdAt: true },
   })
   if (!user) {
     throw new ApiError(401, 'UNAUTHORIZED', 'The access token is invalid or expired.')

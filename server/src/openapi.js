@@ -78,7 +78,7 @@ const openapi = {
   servers: [{ url: '/', description: 'Current host (local development or deployed API)' }],
   tags: [
     { name: 'Health', description: 'Backend and database availability.' },
-    { name: 'Authentication', description: 'Email/password registration, login, and current-user lookup.' },
+    { name: 'Authentication', description: 'Email/password registration, login, and profile access and updates.' },
     { name: 'Themes', description: 'Theme configuration and page counts.' },
     { name: 'Pages', description: 'Page content, versions, and publishing.' },
   ],
@@ -122,6 +122,21 @@ const openapi = {
         responses: {
           200: dataResponse('Current user.', 'CurrentUser'),
           ...authErrors,
+          ...readErrors,
+        },
+      },
+      patch: {
+        tags: ['Authentication'],
+        operationId: 'updateCurrentUser',
+        summary: 'Update the authenticated user profile',
+        security: bearerSecurity,
+        description: 'Updates the current user name and/or profile image. Names must contain non-whitespace text and be at most 80 characters. Profile images must be PNG, JPEG, or WebP data URLs no larger than 2 MB; set profileImage to null to remove it.',
+        requestBody: requestBody('UpdateProfile'),
+        responses: {
+          200: dataResponse('Profile updated.', 'CurrentUser'),
+          ...authErrors,
+          400: responseRef('BadRequest'),
+          413: responseRef('PayloadTooLarge'),
           ...readErrors,
         },
       },
@@ -250,12 +265,23 @@ const openapi = {
     schemas: {
       User: {
         type: 'object',
-        required: ['id', 'email', 'createdAt'],
+        required: ['id', 'email', 'name', 'profileImage', 'createdAt'],
         properties: {
           id: { type: 'string', format: 'uuid', readOnly: true },
           email: { type: 'string', format: 'email' },
+          name: { type: 'string', maxLength: 80 },
+          profileImage: { type: 'string', format: 'uri', nullable: true, description: 'PNG, JPEG, or WebP data URL; maximum decoded size 2 MB.' },
           createdAt: { type: 'string', format: 'date-time', readOnly: true },
         },
+      },
+      UpdateProfile: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 80, pattern: '\\S' },
+          profileImage: { type: 'string', format: 'uri', nullable: true, description: 'Set to null to remove the current image.' },
+        },
+        anyOf: [{ required: ['name'] }, { required: ['profileImage'] }],
+        example: { name: 'Alex Morgan', profileImage: 'data:image/png;base64,...' },
       },
       Credentials: {
         type: 'object',

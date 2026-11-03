@@ -10,6 +10,7 @@ import {
 } from '../auth-service.js'
 
 const router = Router()
+const maxProfileImageBytes = 2 * 1024 * 1024
 
 function requireEmail(value) {
   const email = requireText(value, 'email').toLowerCase()
@@ -27,7 +28,13 @@ function requirePassword(value) {
 }
 
 function userResponse(user) {
-  return { id: user.id, email: user.email, createdAt: user.createdAt }
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    profileImage: user.profileImage,
+    createdAt: user.createdAt,
+  }
 }
 
 router.post('/register', asyncHandler(async (req, res) => {
@@ -37,7 +44,7 @@ router.post('/register', asyncHandler(async (req, res) => {
   const passwordHash = await hashPassword(password)
   const user = await prisma.user.create({
     data: { email, passwordHash },
-    select: { id: true, email: true, createdAt: true },
+    select: { id: true, email: true, name: true, profileImage: true, createdAt: true },
   })
   const accessToken = await createAccessToken(user.id)
 
@@ -70,5 +77,61 @@ router.post('/login', asyncHandler(async (req, res) => {
 router.get('/me', requireAuthentication, (req, res) => {
   res.json({ data: { user: req.user } })
 })
+
+router.patch('/me', requireAuthentication, asyncHandler(async (req, res) => {
+  const data = {}
+  if (Object.hasOwn(req.body ?? {}, 'name')) {
+    const name = requireText(req.body.name, 'name')
+    if (name.length > 80) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'name must be 80 characters or fewer.')
+    }
+    data.name = name
+  }
+  if (Object.hasOwn(req.body ?? {}, 'profileImage')) {
+    const profileImage = req.body.profileImage
+    if (profileImage !== null) {
+      const match = typeof profileImage === 'string'
+        ? /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(profileImage)
+        : null
+      if (!match) {
+        throw new ApiError(400, 'VALIDATION_ERROR', 'profileImage must be a PNG, JPEG, or WebP data URL, or null.')
+      }
+      if (match[2].length > Math.ceil(maxProfileImageBytes / 3) * 4) {
+        throw new ApiError(400, 'VALIDATION_ERROR', 'profileImage must be no larger than 2 MB.')
+      }
+
+      const imageBytes = Buffer.from(match[2], 'base64')
+      if (
+        imageBytes.length === 0
+        || imageBytes.length > maxProfileImageBytes
+        || imageBytes.toString('base64') !== match[2]
+      ) {
+        throw new ApiError(400, 'VALIDATION_ERROR', 'profileImage must be a valid image no larger than 2 MB.')
+      }
+
+      const isPng = match[1] === 'png'
+        && imageBytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+      const isJpeg = match[1] === 'jpeg'
+        && imageBytes[0] === 255 && imageBytes[1] === 216 && imageBytes[2] === 255
+      const isWebp = match[1] === 'webp'
+        && imageBytes.toString('ascii', 0, 4) === 'RIFF'
+        && imageBytes.toString('ascii', 8, 12) === 'WEBP'
+      if (!isPng && !isJpeg && !isWebp) {
+        throw new ApiError(400, 'VALIDATION_ERROR', 'profileImage contents do not match the declared image type.')
+      }
+    }
+    data.profileImage = profileImage
+  }
+  if (Object.keys(data).length === 0) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Provide at least one profile field to update.')
+  }
+
+  const user = await prisma.user.update({
+    where: { id: req.user.id },
+    data,
+    select: { id: true, email: true, name: true, profileImage: true, createdAt: true },
+  })
+  res.json({ data: { user } })
+}))
 
 export default router

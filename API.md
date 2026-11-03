@@ -81,6 +81,22 @@ Returns the current user. Send the token in the request header:
 Authorization: Bearer <accessToken>
 ```
 
+### `PATCH /api/auth/me`
+
+Updates the authenticated user's profile. Send one or both fields:
+
+```json
+{
+  "name": "Alex Morgan",
+  "profileImage": "data:image/png;base64,..."
+}
+```
+
+Names must contain non-whitespace text and be at most 80 characters. Supported
+profile images are PNG, JPEG, and WebP files up to 2 MB, sent as data URLs.
+Set `profileImage` to `null` to remove the current image. The response contains
+the updated user in `data.user`.
+
 Access tokens expire after one hour. There is no refresh or logout endpoint;
 clients should log in again after expiration.
 
