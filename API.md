@@ -11,14 +11,15 @@ Use your configured port or deployed backend host instead of `localhost:3001`
 when applicable. Swagger UI sends requests to the same host that serves the
 documentation. Expand an operation and select **Try it out** to call the API.
 These calls use the real database, including creates, updates, and deletes.
-Use **Authorize** with a bearer token before trying theme or page operations.
+Use **Authorize** with a bearer token before trying theme, page, or component
+operations.
 
 Frontend developers can import the JSON URL into Postman or an OpenAPI client
 generator. For a theme/page workflow, create a theme first and replace the
 example `themeId` with its returned ID before creating a page.
 
 The contract is maintained in `server/src/openapi.js`. Update it alongside
-route changes. It documents all health, theme, and page operations in
+route changes. It documents all health, theme, page, and component operations in
 `server/src`, including request/response schemas, examples, filters, status
 codes, and validation rules. The documentation routes themselves are not
 business operations in the contract.
@@ -207,6 +208,46 @@ Sets the authenticated user's page status to `PUBLISHED`.
 ### `DELETE /api/pages/:id`
 
 Deletes a page owned by the authenticated user.
+
+## Components
+
+All component operations require a valid bearer token and are scoped to the
+authenticated user.
+
+### `GET /api/components`
+
+Lists the authenticated user's saved components, most recently updated first.
+
+### `POST /api/components`
+
+Saves a reusable component.
+
+Required body:
+
+```json
+{
+  "name": "Hero Banner",
+  "contentJson": {
+    "rows": []
+  }
+}
+```
+
+`name` must contain non-whitespace text. `contentJson` must be a JSON object or
+array. New components start at version `1`.
+
+### `GET /api/components/:id`
+
+Retrieves one saved component owned by the authenticated user.
+
+### `PATCH /api/components/:id`
+
+Updates any subset of `name` and `contentJson`. At least one field is required.
+Updating `contentJson` increments `version`; renaming alone does not.
+
+### `DELETE /api/components/:id`
+
+Deletes a saved component owned by the authenticated user.
 
 ## Common status codes
 
