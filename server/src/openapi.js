@@ -314,7 +314,11 @@ const openapi = {
         operationId: 'listMediaAssets',
         summary: 'List media assets',
         security: bearerSecurity,
-        description: 'Returns the authenticated user\'s image metadata, including the preserved relative folder path.',
+        description: 'Returns shared media image metadata across all authenticated users, including the preserved relative folder path.',
+        parameters: [
+          { name: 'folderPath', in: 'query', description: 'Optional folder path filter.', schema: { type: 'string' } },
+          { name: 'search', in: 'query', description: 'Optional filename search filter.', schema: { type: 'string' } },
+        ],
         responses: { 200: dataResponse('Media assets.', 'MediaAsset', true), ...authErrors, ...readErrors },
       },
       post: {
@@ -333,7 +337,7 @@ const openapi = {
         operationId: 'listMediaFolders',
         summary: 'List media folders',
         security: bearerSecurity,
-        description: 'Returns the authenticated user\'s folders, including empty folders.',
+        description: 'Returns shared media folders across all authenticated users, including empty folders.',
         responses: { 200: dataResponse('Media folders.', 'MediaFolder', true), ...authErrors, ...readErrors },
       },
       post: {
@@ -341,9 +345,27 @@ const openapi = {
         operationId: 'createMediaFolder',
         summary: 'Create a media folder',
         security: bearerSecurity,
-        description: 'Creates a folder under the optional parent path. Folder paths are unique per user.',
+        description: 'Creates a folder under the optional parent path.',
         requestBody: requestBody('CreateMediaFolder'),
         responses: { 201: dataResponse('Media folder created.', 'MediaFolder'), ...authErrors, ...writeErrors, ...notFound },
+      },
+      patch: {
+        tags: ['Media'],
+        operationId: 'renameMediaFolder',
+        summary: 'Rename a media folder',
+        security: bearerSecurity,
+        description: 'Renames a media folder and updates all nested folders and assets.',
+        requestBody: requestBody('RenameMediaFolder'),
+        responses: { 200: dataResponse('Media folder renamed.', 'MediaFolder'), ...authErrors, ...writeErrors, ...notFound },
+      },
+      delete: {
+        tags: ['Media'],
+        operationId: 'deleteMediaFolder',
+        summary: 'Delete a media folder',
+        security: bearerSecurity,
+        description: 'Deletes a media folder and moves or deletes its assets.',
+        requestBody: requestBody('DeleteMediaFolder'),
+        responses: { 204: { description: 'Media folder deleted. No response body.' }, ...authErrors, ...notFound, ...readErrors },
       },
     },
     '/api/media/{id}/content': {
@@ -352,13 +374,11 @@ const openapi = {
         tags: ['Media'],
         operationId: 'getMediaAssetContent',
         summary: 'Retrieve image content',
-        security: bearerSecurity,
         responses: {
           200: {
             description: 'Image content.',
             content: { 'image/*': { schema: { type: 'string', format: 'binary' } } },
           },
-          ...authErrors,
           ...notFound,
           ...readErrors,
         },
@@ -366,6 +386,14 @@ const openapi = {
     },
     '/api/media/{id}': {
       parameters: [idParameter],
+      patch: {
+        tags: ['Media'],
+        operationId: 'updateMediaAsset',
+        summary: 'Update a media asset (rename or move folder)',
+        security: bearerSecurity,
+        requestBody: requestBody('UpdateMediaAsset'),
+        responses: { 200: dataResponse('Media asset updated.', 'MediaAsset'), ...authErrors, ...writeErrors, ...notFound },
+      },
       delete: {
         tags: ['Media'],
         operationId: 'deleteMediaAsset',
@@ -502,6 +530,33 @@ const openapi = {
           parentPath: { type: 'string', description: 'Optional path of the parent folder.' },
         },
         example: { name: 'Product photos', parentPath: 'Brand' },
+      },
+      RenameMediaFolder: {
+        type: 'object',
+        required: ['path', 'name'],
+        properties: {
+          path: { type: 'string', minLength: 1, description: 'Existing folder path.' },
+          name: { type: 'string', minLength: 1, maxLength: 100, description: 'New folder name.' },
+        },
+        example: { path: 'Brand/OldName', name: 'NewName' },
+      },
+      DeleteMediaFolder: {
+        type: 'object',
+        required: ['path'],
+        properties: {
+          path: { type: 'string', minLength: 1, description: 'Folder path to delete.' },
+          deleteAssets: { type: 'boolean', description: 'Whether to delete assets inside the folder (default false moves them to root).' },
+        },
+        example: { path: 'Brand/OldName', deleteAssets: false },
+      },
+      UpdateMediaAsset: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 255 },
+          folderPath: { type: 'string' },
+        },
+        anyOf: [{ required: ['name'] }, { required: ['folderPath'] }],
+        example: { name: 'hero-banner.png', folderPath: 'Home Page' },
       },
       CreateMediaAsset: {
         type: 'object',
