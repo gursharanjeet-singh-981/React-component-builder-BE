@@ -19,10 +19,10 @@ generator. For a theme/page workflow, create a theme first and replace the
 example `themeId` with its returned ID before creating a page.
 
 The contract is maintained in `server/src/openapi.js`. Update it alongside
-route changes. It documents all health, theme, page, and component operations in
-`server/src`, including request/response schemas, examples, filters, status
-codes, and validation rules. The documentation routes themselves are not
-business operations in the contract.
+route changes. It documents all health, theme, page, component, and media
+operations in `server/src`, including request/response schemas, examples,
+filters, status codes, and validation rules. The documentation routes
+themselves are not business operations in the contract.
 
 The Express API runs on `http://localhost:3001` by default. Set `PORT` to
 change the port. All endpoints are prefixed with `/api`, use JSON request and
@@ -249,6 +249,67 @@ Updating `contentJson` increments `version`; renaming alone does not.
 
 Deletes a saved component owned by the authenticated user.
 
+## Media assets
+
+Media endpoints require a valid bearer token. Images are stored in the database
+and scoped to the authenticated user. Folder paths are retained as relative
+paths (for example, `Brand/Logos`). In the dashboard's Media tab, choose
+**New folder** to create an empty folder, then select it before choosing
+**Upload images** to upload files into it. **Upload folder** imports a
+directory tree and retains its relative structure.
+
+Supported formats are PNG, JPEG, GIF, WebP, and AVIF, up to 7 MB per image.
+The API validates both the declared format and image signature.
+
+### `GET /api/media`
+
+Lists the authenticated user's images, including `id`, `name`, `folderPath`,
+`mimeType`, `size`, and `createdAt`. Image bytes are not included in this
+metadata response.
+
+### `POST /api/media`
+
+Creates an image asset. `folderPath` is optional and defaults to the root
+folder. Send Base64 image bytes in `contentBase64`:
+
+```json
+{
+  "name": "hero.png",
+  "folderPath": "Brand/Images",
+  "mimeType": "image/png",
+  "contentBase64": "iVBORw0KGgo..."
+}
+```
+
+### `GET /api/media/folders`
+
+Lists the authenticated user's folders, including folders that do not contain
+images yet. Each result includes `id`, `name`, `path`, and `createdAt`.
+
+### `POST /api/media/folders`
+
+Creates an empty folder. `parentPath` is optional; when provided, it must
+identify an existing folder owned by the authenticated user:
+
+```json
+{
+  "name": "Product photos",
+  "parentPath": "Brand"
+}
+```
+
+Folder names must be at most 100 characters and cannot contain path separators.
+Folder paths are unique per user.
+
+### `GET /api/media/:id/content`
+
+Returns the original image bytes with the validated image MIME type. The
+authenticated user must own the asset.
+
+### `DELETE /api/media/:id`
+
+Deletes an image asset owned by the authenticated user.
+
 ## Common status codes
 
 | Status | Meaning |
@@ -260,7 +321,7 @@ Deletes a saved component owned by the authenticated user.
 | `401` | Missing, invalid, or expired access token (or invalid login credentials) |
 | `404` | Resource or API endpoint not found |
 | `409` | Duplicate slug, missing referenced theme, or restricted delete |
-| `413` | Request body exceeds 10 MB |
+| `413` | Request body exceeds 10 MB or an image exceeds 7 MB |
 | `503` | Database unavailable for the health check |
 | `500` | Unexpected server error |
 

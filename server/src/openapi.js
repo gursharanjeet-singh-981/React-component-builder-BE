@@ -77,7 +77,7 @@ const openapi = {
   info: {
     title: 'Component Builder API',
     version: '1.0.0',
-    description: 'API for builder themes, pages, and reusable components. To try protected endpoints in Swagger: (1) call POST /api/auth/register or POST /api/auth/login with email and password; (2) copy data.accessToken from the response; (3) select Authorize and enter the token (without the word Bearer); (4) call the protected endpoints. Themes, pages, and components are scoped to their owner; pages can only reference themes owned by the same user. Health and documentation endpoints remain public. Resource responses use a data envelope; errors use an error envelope. JSON request bodies are limited to 10 MB. Create a theme first, then use its ID to create pages.',
+    description: 'API for builder themes, pages, reusable components, and media assets. To try protected endpoints in Swagger: (1) call POST /api/auth/register or POST /api/auth/login with email and password; (2) copy data.accessToken from the response; (3) select Authorize and enter the token (without the word Bearer); (4) call the protected endpoints. Themes, pages, components, and media assets are scoped to their owner; pages can only reference themes owned by the same user. Health and documentation endpoints remain public. Resource responses use a data envelope; errors use an error envelope. JSON request bodies are limited to 10 MB. Create a theme first, then use its ID to create pages.',
   },
   servers: [{ url: '/', description: 'Current host (local development or deployed API)' }],
   tags: [
@@ -86,6 +86,7 @@ const openapi = {
     { name: 'Themes', description: 'Theme configuration and page counts.' },
     { name: 'Pages', description: 'Page content, versions, and publishing.' },
     { name: 'Components', description: 'Reusable builder components.' },
+    { name: 'Media', description: 'User-owned image assets with folder paths.' },
   ],
   paths: {
     '/api/auth/register': {
@@ -307,6 +308,72 @@ const openapi = {
         responses: { 204: { description: 'Component deleted. No response body.' }, ...authErrors, ...notFound, ...readErrors },
       },
     },
+    '/api/media': {
+      get: {
+        tags: ['Media'],
+        operationId: 'listMediaAssets',
+        summary: 'List media assets',
+        security: bearerSecurity,
+        description: 'Returns the authenticated user\'s image metadata, including the preserved relative folder path.',
+        responses: { 200: dataResponse('Media assets.', 'MediaAsset', true), ...authErrors, ...readErrors },
+      },
+      post: {
+        tags: ['Media'],
+        operationId: 'uploadMediaAsset',
+        summary: 'Upload an image',
+        security: bearerSecurity,
+        description: 'Stores a PNG, JPEG, GIF, WebP, or AVIF image up to 7 MB. Send the image bytes as Base64 in contentBase64 and the relative directory in folderPath.',
+        requestBody: requestBody('CreateMediaAsset'),
+        responses: { 201: dataResponse('Media asset uploaded.', 'MediaAsset'), ...authErrors, ...writeErrors },
+      },
+    },
+    '/api/media/folders': {
+      get: {
+        tags: ['Media'],
+        operationId: 'listMediaFolders',
+        summary: 'List media folders',
+        security: bearerSecurity,
+        description: 'Returns the authenticated user\'s folders, including empty folders.',
+        responses: { 200: dataResponse('Media folders.', 'MediaFolder', true), ...authErrors, ...readErrors },
+      },
+      post: {
+        tags: ['Media'],
+        operationId: 'createMediaFolder',
+        summary: 'Create a media folder',
+        security: bearerSecurity,
+        description: 'Creates a folder under the optional parent path. Folder paths are unique per user.',
+        requestBody: requestBody('CreateMediaFolder'),
+        responses: { 201: dataResponse('Media folder created.', 'MediaFolder'), ...authErrors, ...writeErrors, ...notFound },
+      },
+    },
+    '/api/media/{id}/content': {
+      parameters: [idParameter],
+      get: {
+        tags: ['Media'],
+        operationId: 'getMediaAssetContent',
+        summary: 'Retrieve image content',
+        security: bearerSecurity,
+        responses: {
+          200: {
+            description: 'Image content.',
+            content: { 'image/*': { schema: { type: 'string', format: 'binary' } } },
+          },
+          ...authErrors,
+          ...notFound,
+          ...readErrors,
+        },
+      },
+    },
+    '/api/media/{id}': {
+      parameters: [idParameter],
+      delete: {
+        tags: ['Media'],
+        operationId: 'deleteMediaAsset',
+        summary: 'Delete a media asset',
+        security: bearerSecurity,
+        responses: { 204: { description: 'Media asset deleted. No response body.' }, ...authErrors, ...notFound, ...readErrors },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -404,6 +471,48 @@ const openapi = {
           version: { type: 'integer', minimum: 1, readOnly: true, example: 1 },
           ...timestamps,
         },
+      },
+      MediaAsset: {
+        type: 'object',
+        required: ['id', 'name', 'folderPath', 'mimeType', 'size', 'createdAt'],
+        properties: {
+          id: { type: 'string', format: 'uuid', readOnly: true },
+          name: { type: 'string', maxLength: 255 },
+          folderPath: { type: 'string', description: 'Relative folder path, using forward slashes; empty for unfiled images.' },
+          mimeType: { type: 'string', enum: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'] },
+          size: { type: 'integer', minimum: 1, maximum: 7340032 },
+          createdAt: { type: 'string', format: 'date-time', readOnly: true },
+        },
+      },
+      MediaFolder: {
+        type: 'object',
+        required: ['id', 'name', 'path', 'createdAt'],
+        properties: {
+          id: { type: 'string', format: 'uuid', readOnly: true },
+          name: { type: 'string', maxLength: 100 },
+          path: { type: 'string', description: 'Folder path relative to the media library root.' },
+          createdAt: { type: 'string', format: 'date-time', readOnly: true },
+        },
+      },
+      CreateMediaFolder: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+          parentPath: { type: 'string', description: 'Optional path of the parent folder.' },
+        },
+        example: { name: 'Product photos', parentPath: 'Brand' },
+      },
+      CreateMediaAsset: {
+        type: 'object',
+        required: ['name', 'mimeType', 'contentBase64'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 255 },
+          folderPath: { type: 'string', description: 'Optional relative folder path preserved from the uploaded directory.' },
+          mimeType: { type: 'string', enum: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'] },
+          contentBase64: { type: 'string', format: 'byte', description: 'Base64-encoded image bytes; decoded size must be at most 7 MB.' },
+        },
+        example: { name: 'hero.png', folderPath: 'site/images', mimeType: 'image/png', contentBase64: 'iVBORw0KGgo...' },
       },
       CreateTheme: {
         type: 'object',

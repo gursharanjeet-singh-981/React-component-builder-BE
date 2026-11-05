@@ -34,6 +34,35 @@ model User {
   themes     Theme[]
   pages      Page[]
   components Component[]
+  mediaAssets MediaAsset[]
+  mediaFolders MediaFolder[]
+}
+
+model MediaFolder {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  path       String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, path])
+  @@index([userId, createdAt])
+}
+
+model MediaAsset {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  folderPath String   @default("")
+  mimeType   String
+  size       Int
+  content    Bytes    @db.ByteA
+  createdAt  DateTime @default(now())
+
+  @@index([userId, folderPath])
+  @@index([userId, createdAt])
 }
 
 model Page {
