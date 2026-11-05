@@ -51,6 +51,10 @@ const pageFields = {
   contentJson: schemaRef('JsonDocument'),
   status: schemaRef('PageStatus'),
 }
+const componentFields = {
+  name: { ...text, example: 'Hero Banner', description: 'Non-blank component name. Leading and trailing whitespace is trimmed.' },
+  contentJson: schemaRef('JsonDocument'),
+}
 
 const updateSchema = (properties) => ({
   type: 'object',
@@ -73,7 +77,7 @@ const openapi = {
   info: {
     title: 'Component Builder API',
     version: '1.0.0',
-    description: 'API for builder themes and pages. To try protected endpoints in Swagger: (1) call POST /api/auth/register or POST /api/auth/login with email and password; (2) copy data.accessToken from the response; (3) select Authorize and enter the token (without the word Bearer); (4) call the locked theme and page endpoints. Themes and pages are scoped to their owner; pages can only reference themes owned by the same user. Health and documentation endpoints remain public. Resource responses use a data envelope; errors use an error envelope. JSON request bodies are limited to 10 MB. Create a theme first, then use its ID to create pages.',
+    description: 'API for builder themes, pages, and reusable components. To try protected endpoints in Swagger: (1) call POST /api/auth/register or POST /api/auth/login with email and password; (2) copy data.accessToken from the response; (3) select Authorize and enter the token (without the word Bearer); (4) call the protected endpoints. Themes, pages, and components are scoped to their owner; pages can only reference themes owned by the same user. Health and documentation endpoints remain public. Resource responses use a data envelope; errors use an error envelope. JSON request bodies are limited to 10 MB. Create a theme first, then use its ID to create pages.',
   },
   servers: [{ url: '/', description: 'Current host (local development or deployed API)' }],
   tags: [
@@ -81,6 +85,7 @@ const openapi = {
     { name: 'Authentication', description: 'Email/password registration, login, and profile access and updates.' },
     { name: 'Themes', description: 'Theme configuration and page counts.' },
     { name: 'Pages', description: 'Page content, versions, and publishing.' },
+    { name: 'Components', description: 'Reusable builder components.' },
   ],
   paths: {
     '/api/auth/register': {
@@ -257,6 +262,51 @@ const openapi = {
         responses: { 200: dataResponse('Published page.', 'Page'), ...authErrors, ...notFound, ...readErrors },
       },
     },
+    '/api/components': {
+      get: {
+        tags: ['Components'],
+        operationId: 'listComponents',
+        summary: 'List saved components',
+        security: bearerSecurity,
+        description: 'Returns the authenticated user\'s saved components, most recently updated first.',
+        responses: { 200: dataResponse('Saved components.', 'Component', true), ...authErrors, ...readErrors },
+      },
+      post: {
+        tags: ['Components'],
+        operationId: 'createComponent',
+        summary: 'Save a component',
+        security: bearerSecurity,
+        description: 'Creates a reusable component owned by the authenticated user. New components start at version 1.',
+        requestBody: requestBody('CreateComponent'),
+        responses: { 201: dataResponse('Component saved.', 'Component'), ...authErrors, ...writeErrors },
+      },
+    },
+    '/api/components/{id}': {
+      parameters: [idParameter],
+      get: {
+        tags: ['Components'],
+        operationId: 'getComponent',
+        summary: 'Retrieve a saved component',
+        security: bearerSecurity,
+        responses: { 200: dataResponse('Saved component.', 'Component'), ...authErrors, ...notFound, ...readErrors },
+      },
+      patch: {
+        tags: ['Components'],
+        operationId: 'updateComponent',
+        summary: 'Update a saved component',
+        security: bearerSecurity,
+        description: 'Updates a component owned by the authenticated user. Provide at least one supported field. Updating contentJson increments version; renaming alone does not.',
+        requestBody: requestBody('UpdateComponent'),
+        responses: { 200: dataResponse('Component updated.', 'Component'), ...authErrors, ...writeErrors, ...notFound },
+      },
+      delete: {
+        tags: ['Components'],
+        operationId: 'deleteComponent',
+        summary: 'Delete a saved component',
+        security: bearerSecurity,
+        responses: { 204: { description: 'Component deleted. No response body.' }, ...authErrors, ...notFound, ...readErrors },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -345,6 +395,16 @@ const openapi = {
       PageWithTheme: {
         allOf: [schemaRef('Page'), { type: 'object', required: ['theme'], properties: { theme: schemaRef('ThemeSummary') } }],
       },
+      Component: {
+        type: 'object',
+        required: ['id', 'name', 'contentJson', 'version', 'createdAt', 'updatedAt'],
+        properties: {
+          id: { type: 'string', format: 'uuid', readOnly: true },
+          ...componentFields,
+          version: { type: 'integer', minimum: 1, readOnly: true, example: 1 },
+          ...timestamps,
+        },
+      },
       CreateTheme: {
         type: 'object',
         required: ['name', 'slug', 'configJson'],
@@ -359,6 +419,13 @@ const openapi = {
         example: { name: 'Home', slug: 'home', themeId: 'replace-with-created-theme-id', contentJson: { sections: [] }, status: 'DRAFT' },
       },
       UpdatePage: { ...updateSchema(pageFields), example: { contentJson: { sections: [] } } },
+      CreateComponent: {
+        type: 'object',
+        required: ['name', 'contentJson'],
+        properties: componentFields,
+        example: { name: 'Hero Banner', contentJson: { rows: [] } },
+      },
+      UpdateComponent: { ...updateSchema(componentFields), example: { contentJson: { rows: [] } } },
       ApiError: {
         type: 'object',
         required: ['error'],

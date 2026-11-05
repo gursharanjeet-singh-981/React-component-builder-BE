@@ -5,6 +5,7 @@ import { prisma } from './database.js'
 import { asyncHandler, handleApiError } from './api-utils.js'
 import openapi from './openapi.js'
 import pagesRouter from './routes/pages.js'
+import componentsRouter from './routes/components.js'
 import themesRouter from './routes/themes.js'
 import authRouter from './routes/auth.js'
 import { requireAuthentication } from './auth-middleware.js'
@@ -60,6 +61,7 @@ app.get('/api/health', asyncHandler(async (req, res) => {
 app.use('/api/auth', authRouter)
 app.use('/api/themes', requireAuthentication, themesRouter)
 app.use('/api/pages', requireAuthentication, pagesRouter)
+app.use('/api/components', requireAuthentication, componentsRouter)
 
 app.use('/api', (req, res) => {
   res.status(404).json({
