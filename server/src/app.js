@@ -9,6 +9,7 @@ import componentsRouter from './routes/components.js'
 import themesRouter from './routes/themes.js'
 import authRouter from './routes/auth.js'
 import { requireAuthentication } from './auth-middleware.js'
+import generateHandler from '../../api/generate.js'
 
 const app = express()
 
@@ -57,6 +58,8 @@ app.get('/api/health', asyncHandler(async (req, res) => {
     })
   }
 }))
+
+app.post('/api/generate', asyncHandler(generateHandler))
 
 app.use('/api/auth', authRouter)
 app.use('/api/themes', requireAuthentication, themesRouter)
