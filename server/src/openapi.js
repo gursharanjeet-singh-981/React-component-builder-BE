@@ -89,6 +89,70 @@ const openapi = {
     { name: 'Media', description: 'User-owned image assets with folder paths.' },
   ],
   paths: {
+    '/api/homepage': {
+      get: {
+        tags: ['Pages'],
+        operationId: 'getPublicHomepage',
+        summary: 'Get the public homepage',
+        description: 'Returns the globally selected published page, or null when no published page is selected. This endpoint is public.',
+        responses: {
+          200: jsonResponse('Public homepage page, or null when unset.', {
+            type: 'object',
+            required: ['data'],
+            properties: { data: { ...schemaRef('Page'), nullable: true } },
+          }),
+          ...readErrors,
+        },
+      },
+    },
+    '/api/pages/homepage': {
+      get: {
+        tags: ['Pages'],
+        operationId: 'getHomepage',
+        summary: 'Get the globally selected homepage',
+        description: 'Returns the global homepage selection for dashboard controls.',
+        security: bearerSecurity,
+        responses: {
+          200: jsonResponse('Selected homepage page, or null when unset.', {
+            type: 'object',
+            required: ['data'],
+            properties: { data: { ...schemaRef('Page'), nullable: true } },
+          }),
+          ...authErrors,
+          ...readErrors,
+        },
+      },
+      patch: {
+        tags: ['Pages'],
+        operationId: 'setHomepage',
+        summary: 'Set or clear the global public homepage',
+        security: bearerSecurity,
+        description: 'Any authenticated user may set pageId to one of their own published pages. The selection becomes public for everyone. Set pageId to null to clear it.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['pageId'],
+                properties: { pageId: { type: 'string', nullable: true } },
+              },
+            },
+          },
+        },
+        responses: {
+          200: jsonResponse('Selected homepage page, or null when cleared.', {
+            type: 'object',
+            required: ['data'],
+            properties: { data: { ...schemaRef('Page'), nullable: true } },
+          }),
+          ...authErrors,
+          400: responseRef('BadRequest'),
+          ...notFound,
+          ...readErrors,
+        },
+      },
+    },
     '/api/auth/register': {
       post: {
         tags: ['Authentication'],

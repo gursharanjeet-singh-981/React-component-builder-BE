@@ -24,18 +24,24 @@ model Theme {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  name         String   @default("")
-  profileImage String?
-  createdAt    DateTime @default(now())
+  id              String   @id @default(uuid())
+  email           String   @unique
+  passwordHash    String
+  name            String   @default("")
+  profileImage    String?
+  createdAt       DateTime @default(now())
 
-  themes     Theme[]
-  pages      Page[]
-  components Component[]
-  mediaAssets MediaAsset[]
+  themes       Theme[]
+  pages        Page[]
+  components   Component[]
+  mediaAssets  MediaAsset[]
   mediaFolders MediaFolder[]
+}
+
+model AppSettings {
+  id              Int    @id @default(1)
+  homepagePageId  String? @unique
+  homepagePage    Page?  @relation("GlobalHomepage", fields: [homepagePageId], references: [id], onDelete: SetNull)
 }
 
 model MediaFolder {
@@ -66,11 +72,12 @@ model MediaAsset {
 }
 
 model Page {
-  id     String  @id @default(uuid())
-  userId String?
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-  name   String
-  slug   String
+  id              String       @id @default(uuid())
+  userId          String?
+  user            User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  homepageSetting AppSettings? @relation("GlobalHomepage")
+  name            String
+  slug            String
 
   themeId String
   theme   Theme  @relation(fields: [themeId], references: [id], onDelete: Restrict)

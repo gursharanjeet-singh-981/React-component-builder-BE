@@ -50,6 +50,46 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json({ data: pages })
 }))
 
+router.get('/homepage', asyncHandler(async (req, res) => {
+  const settings = await prisma.appSettings.findUnique({
+    where: { id: 1 },
+    include: {
+      homepagePage: {
+        select: { id: true, name: true, status: true },
+      },
+    },
+  })
+  const page = settings?.homepagePage || null
+  res.json({ data: page })
+}))
+
+router.patch('/homepage', asyncHandler(async (req, res) => {
+  const pageId = req.body?.pageId === null
+    ? null
+    : requireText(req.body?.pageId, 'pageId')
+  let page = null
+
+  if (pageId) {
+    page = await prisma.page.findFirst({
+      where: { id: pageId, userId: req.user.id },
+      include: { theme: true },
+    })
+    if (!page) {
+      throw new ApiError(404, 'NOT_FOUND', 'Page was not found.')
+    }
+    if (page.status !== 'PUBLISHED') {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'Publish the page before setting it as the public homepage.')
+    }
+  }
+
+  await prisma.appSettings.upsert({
+    where: { id: 1 },
+    update: { homepagePageId: pageId },
+    create: { id: 1, homepagePageId: pageId },
+  })
+  res.json({ data: page })
+}))
+
 router.post('/', asyncHandler(async (req, res) => {
   const themeId = requireText(req.body?.themeId, 'themeId')
   await requireOwnedTheme(themeId, req.user.id)
@@ -90,7 +130,15 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     data.contentJson = requireJson(req.body.contentJson, 'contentJson')
     data.version = { increment: 1 }
   }
-  if (Object.hasOwn(req.body ?? {}, 'status')) data.status = requireStatus(req.body.status)
+  if (Object.hasOwn(req.body ?? {}, 'status')) {
+    data.status = requireStatus(req.body.status)
+    if (data.status === 'DRAFT') {
+      const settings = await prisma.appSettings.findUnique({ where: { id: 1 } })
+      if (settings?.homepagePageId === req.params.id) {
+        throw new ApiError(400, 'VALIDATION_ERROR', 'Clear the public homepage selection before unpublishing this page.')
+      }
+    }
+  }
   if (Object.keys(data).length === 0) {
     throw new ApiError(400, 'VALIDATION_ERROR', 'Provide at least one field to update.')
   }

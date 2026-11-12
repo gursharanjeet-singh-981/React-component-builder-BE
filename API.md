@@ -155,6 +155,29 @@ reference it (`onDelete: Restrict`).
 
 ## Pages
 
+### `GET /api/homepage`
+
+Public endpoint. Returns the globally selected, published homepage page, or
+`null` when no published page is selected.
+
+### `GET /api/pages/homepage`
+
+Returns the current global homepage selection for authenticated dashboard
+controls.
+
+### `PATCH /api/pages/homepage`
+
+Any signed-in user can set one of their own **published** pages as the
+homepage. The selection is global and visible to all visitors:
+
+```json
+{ "pageId": "<page-id>" }
+```
+
+Pass `{ "pageId": null }` to clear the selection and restore the app's default
+landing page. A selected homepage must be cleared before that page can be
+unpublished.
+
 ### `GET /api/pages`
 
 Lists the authenticated user's pages, newest first. Optionally filter with

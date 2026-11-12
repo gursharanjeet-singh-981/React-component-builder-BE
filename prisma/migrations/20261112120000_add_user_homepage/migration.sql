@@ -1,0 +1,7 @@
+ALTER TABLE "User"
+ADD COLUMN "homepagePageId" TEXT;
+
+ALTER TABLE "User"
+ADD CONSTRAINT "User_homepagePageId_fkey"
+FOREIGN KEY ("homepagePageId") REFERENCES "Page"("id")
+ON DELETE SET NULL ON UPDATE CASCADE;
