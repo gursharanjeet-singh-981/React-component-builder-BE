@@ -87,6 +87,7 @@ const openapi = {
     { name: 'Pages', description: 'Page content, versions, and publishing.' },
     { name: 'Components', description: 'Reusable builder components.' },
     { name: 'Media', description: 'User-owned image assets with folder paths.' },
+    { name: 'Integrations', description: 'Publish generated projects to GitHub and deploy them with Vercel.' },
   ],
   paths: {
     '/api/auth/register': {
@@ -329,6 +330,108 @@ const openapi = {
         description: 'Stores a PNG, JPEG, GIF, WebP, or AVIF image up to 7 MB. Send the image bytes as Base64 in contentBase64 and the relative directory in folderPath.',
         requestBody: requestBody('CreateMediaAsset'),
         responses: { 201: dataResponse('Media asset uploaded.', 'MediaAsset'), ...authErrors, ...writeErrors },
+      },
+    },
+    '/api/integrations/connections': {
+      get: {
+        tags: ['Integrations'],
+        operationId: 'listIntegrationConnections',
+        summary: 'List connected provider accounts',
+        security: bearerSecurity,
+        responses: { 200: dataResponse('Connected provider accounts.', 'IntegrationConnections'), ...authErrors, ...readErrors },
+      },
+    },
+    '/api/integrations/publishing-results/{documentId}': {
+      parameters: [{ ...idParameter, name: 'documentId', description: 'Stable Builder document ID.' }],
+      get: {
+        tags: ['Integrations'],
+        operationId: 'getBuilderPublishingResults',
+        summary: 'Get the saved GitHub and Vercel links for a Builder document',
+        security: bearerSecurity,
+        responses: {
+          200: jsonResponse('Saved publishing results, or null when none exist.', {
+            type: 'object',
+            required: ['data'],
+            properties: { data: { oneOf: [schemaRef('BuilderPublishingResultRecord'), { type: 'null' }] } },
+          }),
+          ...authErrors,
+          ...readErrors,
+        },
+      },
+      put: {
+        tags: ['Integrations'],
+        operationId: 'saveBuilderPublishingResults',
+        summary: 'Save the GitHub and Vercel links for a Builder document',
+        security: bearerSecurity,
+        requestBody: requestBody('BuilderPublishingResultRecord'),
+        responses: {
+          200: dataResponse('Publishing results saved.', 'BuilderPublishingResultRecord'),
+          ...authErrors,
+          400: responseRef('BadRequest'),
+          ...readErrors,
+        },
+      },
+    },
+    '/api/integrations/credentials/{provider}': {
+      parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string', enum: ['github', 'vercel'] } }],
+      put: {
+        tags: ['Integrations'],
+        operationId: 'saveIntegrationCredential',
+        summary: 'Validate and securely save a provider token',
+        security: bearerSecurity,
+        requestBody: requestBody('SaveIntegrationCredential'),
+        responses: {
+          200: dataResponse('Provider credential saved; only the connected account name is returned.', 'IntegrationAccount'),
+          ...authErrors,
+          400: responseRef('BadRequest'),
+          502: responseRef('IntegrationError'),
+          ...readErrors,
+        },
+      },
+    },
+    '/api/integrations/{provider}': {
+      parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string', enum: ['github', 'vercel'] } }],
+      delete: {
+        tags: ['Integrations'],
+        operationId: 'disconnectIntegration',
+        summary: 'Disconnect a provider account',
+        security: bearerSecurity,
+        responses: { 204: { description: 'Provider disconnected.' }, ...authErrors, ...notFound, ...readErrors },
+      },
+    },
+    '/api/integrations/github/publish': {
+      post: {
+        tags: ['Integrations'],
+        operationId: 'publishGeneratedProjectToGitHub',
+        summary: 'Create or reuse a GitHub repository and push the generated React project',
+        security: bearerSecurity,
+        description: 'Requires a connected GitHub account. The repository is private by default and includes a Vite/React project scaffold.',
+        requestBody: requestBody('PublishToGitHub'),
+        responses: {
+          201: dataResponse('Repository created or updated with the generated project.', 'GitHubRepository'),
+          ...authErrors,
+          400: responseRef('BadRequest'),
+          413: responseRef('PayloadTooLarge'),
+          502: responseRef('IntegrationError'),
+          ...readErrors,
+        },
+      },
+    },
+    '/api/integrations/vercel/deploy': {
+      post: {
+        tags: ['Integrations'],
+        operationId: 'deployGeneratedProjectToVercel',
+        summary: 'Deploy the generated project directly to Vercel',
+        security: bearerSecurity,
+        description: 'Requires a connected Vercel account. Project files are uploaded directly; Vercel does not need GitHub repository access.',
+        requestBody: requestBody('DeployToVercel'),
+        responses: {
+          202: dataResponse('Project created and deployment queued.', 'VercelDeployment'),
+          ...authErrors,
+          400: responseRef('BadRequest'),
+          502: responseRef('IntegrationError'),
+          ...readErrors,
+        },
       },
     },
     '/api/media/folders': {
@@ -590,6 +693,78 @@ const openapi = {
         example: { name: 'Hero Banner', contentJson: { rows: [] } },
       },
       UpdateComponent: { ...updateSchema(componentFields), example: { contentJson: { rows: [] } } },
+      IntegrationConnections: {
+        type: 'object',
+        required: ['github', 'vercel'],
+        properties: {
+          github: { oneOf: [schemaRef('IntegrationAccount'), { type: 'null' }] },
+          vercel: { oneOf: [schemaRef('IntegrationAccount'), { type: 'null' }] },
+        },
+      },
+      IntegrationAccount: {
+        type: 'object',
+        required: ['provider', 'accountName'],
+        properties: {
+          provider: { type: 'string', enum: ['github', 'vercel'] },
+          accountName: { type: 'string' },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      BuilderPublishingResultRecord: {
+        type: 'object',
+        required: ['repository', 'deployment'],
+        properties: {
+          repository: { oneOf: [schemaRef('GitHubRepository'), { type: 'null' }] },
+          deployment: { oneOf: [schemaRef('VercelDeployment'), { type: 'null' }] },
+        },
+      },
+      SaveIntegrationCredential: {
+        type: 'object',
+        required: ['token'],
+        properties: { token: { type: 'string', minLength: 1, writeOnly: true } },
+      },
+      PublishToGitHub: {
+        type: 'object',
+        required: ['name', 'pageName', 'jsx'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+          private: { type: 'boolean', default: true },
+          pageName: { type: 'string', minLength: 1 },
+          jsx: { type: 'string', minLength: 1, maxLength: 1000000 },
+        },
+      },
+      GitHubRepository: {
+        type: 'object',
+        required: ['id', 'fullName', 'htmlUrl', 'private', 'commitSha', 'branch'],
+        properties: {
+          id: { type: 'integer', minimum: 1 },
+          fullName: { type: 'string' },
+          htmlUrl: { type: 'string', format: 'uri' },
+          private: { type: 'boolean' },
+          commitSha: { type: 'string' },
+          branch: { type: 'string' },
+        },
+      },
+      DeployToVercel: {
+        type: 'object',
+        required: ['name', 'pageName', 'jsx'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+          pageName: { type: 'string', minLength: 1 },
+          jsx: { type: 'string', minLength: 1, maxLength: 1000000 },
+        },
+      },
+      VercelDeployment: {
+        type: 'object',
+        required: ['projectId', 'projectUrl', 'deploymentId', 'deploymentState'],
+        properties: {
+          projectId: { type: 'string' },
+          projectUrl: { type: 'string', format: 'uri' },
+          deploymentId: { type: 'string' },
+          deploymentUrl: { type: 'string', format: 'uri', nullable: true },
+          deploymentState: { type: 'string' },
+        },
+      },
       ApiError: {
         type: 'object',
         required: ['error'],
@@ -598,7 +773,7 @@ const openapi = {
             type: 'object',
             required: ['code', 'message'],
             properties: {
-              code: { type: 'string', enum: ['VALIDATION_ERROR', 'INVALID_JSON', 'NOT_FOUND', 'CONFLICT', 'PAYLOAD_TOO_LARGE', 'UNAUTHORIZED', 'INVALID_CREDENTIALS', 'INTERNAL_ERROR'] },
+              code: { type: 'string', enum: ['VALIDATION_ERROR', 'INVALID_JSON', 'NOT_FOUND', 'CONFLICT', 'PAYLOAD_TOO_LARGE', 'UNAUTHORIZED', 'INVALID_CREDENTIALS', 'INTEGRATION_ERROR', 'INTEGRATION_NOT_CONFIGURED', 'INTEGRATION_NOT_CONNECTED', 'INTEGRATION_TOKEN_EXPIRED', 'INTEGRATION_CALLBACK_ERROR', 'INTEGRATION_CREDENTIAL_ERROR', 'INTERNAL_ERROR'] },
               message: { type: 'string' },
             },
           },
@@ -630,6 +805,7 @@ const openapi = {
       NotFound: errorResponse('The resource was not found.', 'NOT_FOUND', 'The requested record was not found.'),
       Conflict: errorResponse('A unique value already exists, a referenced theme is missing, or a theme is still referenced by pages.', 'CONFLICT', 'A record with the provided unique value already exists.'),
       PayloadTooLarge: errorResponse('Request body exceeds the 10 MB limit.', 'PAYLOAD_TOO_LARGE', 'Request body exceeds the 10 MB limit.'),
+      IntegrationError: errorResponse('GitHub or Vercel rejected the integration request.', 'INTEGRATION_ERROR', 'Integration request failed.'),
       InternalError: errorResponse('An unexpected server error occurred.', 'INTERNAL_ERROR', 'An unexpected server error occurred.'),
     },
   },

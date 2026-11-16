@@ -36,6 +36,36 @@ model User {
   components Component[]
   mediaAssets MediaAsset[]
   mediaFolders MediaFolder[]
+  integrations IntegrationConnection[]
+  publishingResults BuilderPublishingResult[]
+}
+
+model BuilderPublishingResult {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId   String
+  resultJson   Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, documentId])
+  @@index([userId, updatedAt])
+}
+
+model IntegrationConnection {
+  id                    String   @id @default(uuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider              String
+  providerAccountId     String
+  accountName           String
+  encryptedAccessToken String   @db.Text
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([provider, providerAccountId])
 }
 
 model MediaFolder {
