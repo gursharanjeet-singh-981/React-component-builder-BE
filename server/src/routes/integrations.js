@@ -6,8 +6,7 @@ import { createGeneratedProjectFiles } from '../generated-project.js'
 import { requireAuthentication } from '../auth-middleware.js'
 
 const router = Router()
-const providers = new Set(['github', 'vercel'])
-const githubApi = 'https://api.github.com'
+const providers = new Set(['vercel'])
 const vercelApi = 'https://api.vercel.com'
 
 function getEncryptionKey() {
@@ -59,8 +58,7 @@ async function requestProviderJson(url, token, provider, options = {}) {
       ...options,
       headers: {
         Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
+        Accept: 'application/json',
         'Content-Type': 'application/json',
         ...options.headers,
       },
@@ -134,35 +132,12 @@ function requireHttpsUrl(value, field, nullable = false) {
 }
 
 function validatePublishingResult(value) {
-  const repository = value?.repository
-  if (!repository || typeof repository !== 'object') {
-    throw new ApiError(400, 'VALIDATION_ERROR', 'repository must be a GitHub repository result.')
-  }
-  if (!Number.isSafeInteger(repository.id) || repository.id <= 0) {
-    throw new ApiError(400, 'VALIDATION_ERROR', 'repository.id must be a valid GitHub repository ID.')
-  }
-  if (typeof repository.private !== 'boolean') {
-    throw new ApiError(400, 'VALIDATION_ERROR', 'repository.private must be a boolean.')
-  }
-
-  const normalizedRepository = {
-    id: repository.id,
-    fullName: requireText(repository.fullName, 'repository.fullName'),
-    htmlUrl: requireHttpsUrl(repository.htmlUrl, 'repository.htmlUrl'),
-    private: repository.private,
-    commitSha: requireText(repository.commitSha, 'repository.commitSha'),
-    branch: requireText(repository.branch, 'repository.branch'),
-  }
   const deployment = value.deployment
-  if (deployment === null) {
-    return { repository: normalizedRepository, deployment: null }
-  }
   if (!deployment || typeof deployment !== 'object') {
-    throw new ApiError(400, 'VALIDATION_ERROR', 'deployment must be a Vercel deployment result or null.')
+    throw new ApiError(400, 'VALIDATION_ERROR', 'deployment must be a Vercel deployment result.')
   }
 
   return {
-    repository: normalizedRepository,
     deployment: {
       projectId: requireText(deployment.projectId, 'deployment.projectId'),
       projectUrl: requireHttpsUrl(deployment.projectUrl, 'deployment.projectUrl'),
@@ -223,13 +198,9 @@ router.put('/credentials/:provider', requireAuthentication, asyncHandler(async (
   if (accessToken.length > 10_000) {
     throw new ApiError(400, 'VALIDATION_ERROR', 'token is too long.')
   }
-  const account = provider === 'github'
-    ? await requestProviderJson(`${githubApi}/user`, accessToken, 'GitHub')
-    : await requestProviderJson(`${vercelApi}/v2/user`, accessToken, 'Vercel')
-  const accountId = provider === 'github' ? account.id : (account.user?.id || account.id)
-  const accountName = provider === 'github'
-    ? account.login
-    : (account.user?.username || account.user?.name || account.user?.email || 'Vercel account')
+  const account = await requestProviderJson(`${vercelApi}/v2/user`, accessToken, 'Vercel')
+  const accountId = account.user?.id || account.id
+  const accountName = account.user?.username || account.user?.name || account.user?.email || 'Vercel account'
   if (!accountId || !accountName) {
     throw new ApiError(502, 'INTEGRATION_ERROR', `${provider} did not return account details for this token.`)
   }
@@ -254,134 +225,6 @@ router.delete('/:provider', requireAuthentication, asyncHandler(async (req, res)
     where: { userId: req.user.id, provider: req.params.provider },
   })
   res.status(204).end()
-}))
-
-router.post('/github/publish', requireAuthentication, asyncHandler(async (req, res) => {
-  const name = requireText(req.body?.name, 'name')
-  const pageName = requireText(req.body?.pageName, 'pageName')
-  const jsx = requireText(req.body?.jsx, 'jsx')
-
-  if (!/^[a-zA-Z0-9._-]{1,100}$/.test(name)) {
-    throw new ApiError(400, 'VALIDATION_ERROR', 'Repository name may contain letters, numbers, dots, underscores, and hyphens.')
-  }
-  if (jsx.length > 1_000_000) {
-    throw new ApiError(413, 'PAYLOAD_TOO_LARGE', 'Generated JSX exceeds the 1 MB publishing limit.')
-  }
-
-  const { token, connection } = await requireConnection(req.user.id, 'github')
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-    'Content-Type': 'application/json',
-  }
-
-  let repository
-  try {
-    repository = await requestProviderJson(`${githubApi}/user/repos`, token, 'GitHub', {
-      method: 'POST',
-      body: JSON.stringify({ name, private: req.body?.private !== false, auto_init: true }),
-    })
-  } catch (error) {
-    if (error.providerStatus !== 422) throw error
-    try {
-      repository = await requestProviderJson(
-        `${githubApi}/repos/${encodeURIComponent(connection.accountName)}/${encodeURIComponent(name)}`,
-        token,
-        'GitHub',
-      )
-    } catch (lookupError) {
-      if (lookupError.providerStatus === 404) throw error
-      throw lookupError
-    }
-  }
-
-  let commit
-  try {
-    const branch = repository.default_branch || 'main'
-    const encodedBranch = encodeURIComponent(branch)
-    let initialRef = null
-    if (repository.default_branch) {
-      try {
-        initialRef = await requestProviderJson(
-          `${githubApi}/repos/${repository.full_name}/git/ref/heads/${encodedBranch}`,
-          token,
-          'GitHub',
-        )
-      } catch (error) {
-        if (error.providerStatus !== 404 && error.providerStatus !== 409) throw error
-      }
-    }
-    if (!initialRef) {
-      const initialization = await requestProviderJson(
-        `${githubApi}/repos/${repository.full_name}/contents/README.md`,
-        token,
-        'GitHub',
-        {
-          method: 'PUT',
-          body: JSON.stringify({
-            message: 'Initialize repository',
-            content: Buffer.from(`# ${name}\n`).toString('base64'),
-            branch,
-          }),
-        },
-      )
-      initialRef = { object: { sha: initialization.commit.sha } }
-    }
-    const parentCommitSha = initialRef.object.sha
-    const parentCommit = await requestProviderJson(
-      `${githubApi}/repos/${repository.full_name}/git/commits/${parentCommitSha}`,
-      token,
-      'GitHub',
-    )
-    const files = createGeneratedProjectFiles(pageName, jsx)
-    const tree = await requestProviderJson(`${githubApi}/repos/${repository.full_name}/git/trees`, token, 'GitHub', {
-      method: 'POST',
-      body: JSON.stringify({
-        base_tree: parentCommit.tree.sha,
-        tree: files.map(({ path, content }) => ({
-          path,
-          mode: '100644',
-          type: 'blob',
-          content,
-        })),
-      }),
-    })
-    commit = await requestProviderJson(`${githubApi}/repos/${repository.full_name}/git/commits`, token, 'GitHub', {
-      method: 'POST',
-      body: JSON.stringify({
-        message: `Add generated ${pageName} project`,
-        tree: tree.sha,
-        parents: [parentCommitSha],
-      }),
-    })
-    await requestProviderJson(
-      `${githubApi}/repos/${repository.full_name}/git/refs/heads/${encodedBranch}`,
-      token,
-      'GitHub',
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ sha: commit.sha }),
-      },
-    )
-  } catch (error) {
-    throw new ApiError(
-      error.status || 502,
-      'INTEGRATION_ERROR',
-      `Repository ${repository.html_url} is available, but the generated project could not be pushed: ${error.message}`,
-    )
-  }
-
-  res.status(201).json({
-    data: {
-      id: repository.id,
-      fullName: repository.full_name,
-      htmlUrl: repository.html_url,
-      private: repository.private,
-      commitSha: commit.sha,
-      branch: repository.default_branch || 'main',
-    },
-  })
 }))
 
 router.post('/vercel/deploy', requireAuthentication, asyncHandler(async (req, res) => {
