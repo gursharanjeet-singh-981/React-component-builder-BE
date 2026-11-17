@@ -87,6 +87,7 @@ const openapi = {
     { name: 'Pages', description: 'Page content, versions, and publishing.' },
     { name: 'Components', description: 'Reusable builder components.' },
     { name: 'Media', description: 'User-owned image assets with folder paths.' },
+    { name: 'Integrations', description: 'Deploy generated projects directly to Vercel.' },
   ],
   paths: {
     '/api/auth/register': {
@@ -329,6 +330,90 @@ const openapi = {
         description: 'Stores a PNG, JPEG, GIF, WebP, or AVIF image up to 7 MB. Send the image bytes as Base64 in contentBase64 and the relative directory in folderPath.',
         requestBody: requestBody('CreateMediaAsset'),
         responses: { 201: dataResponse('Media asset uploaded.', 'MediaAsset'), ...authErrors, ...writeErrors },
+      },
+    },
+    '/api/integrations/connections': {
+      get: {
+        tags: ['Integrations'],
+        operationId: 'listIntegrationConnections',
+        summary: 'List connected provider accounts',
+        security: bearerSecurity,
+        responses: { 200: dataResponse('Connected provider accounts.', 'IntegrationConnections'), ...authErrors, ...readErrors },
+      },
+    },
+    '/api/integrations/publishing-results/{documentId}': {
+      parameters: [{ ...idParameter, name: 'documentId', description: 'Stable Builder document ID.' }],
+      get: {
+        tags: ['Integrations'],
+        operationId: 'getBuilderPublishingResults',
+        summary: 'Get the saved Vercel deployment for a Builder document',
+        security: bearerSecurity,
+        responses: {
+          200: jsonResponse('Saved publishing results, or null when none exist.', {
+            type: 'object',
+            required: ['data'],
+            properties: { data: { oneOf: [schemaRef('BuilderPublishingResultRecord'), { type: 'null' }] } },
+          }),
+          ...authErrors,
+          ...readErrors,
+        },
+      },
+      put: {
+        tags: ['Integrations'],
+        operationId: 'saveBuilderPublishingResults',
+        summary: 'Save the Vercel deployment for a Builder document',
+        security: bearerSecurity,
+        requestBody: requestBody('BuilderPublishingResultRecord'),
+        responses: {
+          200: dataResponse('Publishing results saved.', 'BuilderPublishingResultRecord'),
+          ...authErrors,
+          400: responseRef('BadRequest'),
+          ...readErrors,
+        },
+      },
+    },
+    '/api/integrations/credentials/{provider}': {
+      parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string', enum: ['vercel'] } }],
+      put: {
+        tags: ['Integrations'],
+        operationId: 'saveIntegrationCredential',
+        summary: 'Validate and securely save a provider token',
+        security: bearerSecurity,
+        requestBody: requestBody('SaveIntegrationCredential'),
+        responses: {
+          200: dataResponse('Provider credential saved; only the connected account name is returned.', 'IntegrationAccount'),
+          ...authErrors,
+          400: responseRef('BadRequest'),
+          502: responseRef('IntegrationError'),
+          ...readErrors,
+        },
+      },
+    },
+    '/api/integrations/{provider}': {
+      parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string', enum: ['vercel'] } }],
+      delete: {
+        tags: ['Integrations'],
+        operationId: 'disconnectIntegration',
+        summary: 'Disconnect a provider account',
+        security: bearerSecurity,
+        responses: { 204: { description: 'Provider disconnected.' }, ...authErrors, ...notFound, ...readErrors },
+      },
+    },
+    '/api/integrations/vercel/deploy': {
+      post: {
+        tags: ['Integrations'],
+        operationId: 'deployGeneratedProjectToVercel',
+        summary: 'Deploy the generated project directly to Vercel',
+        security: bearerSecurity,
+        description: 'Requires a connected Vercel account. Project files are uploaded directly to Vercel.',
+        requestBody: requestBody('DeployToVercel'),
+        responses: {
+          202: dataResponse('Project created and deployment queued.', 'VercelDeployment'),
+          ...authErrors,
+          400: responseRef('BadRequest'),
+          502: responseRef('IntegrationError'),
+          ...readErrors,
+        },
       },
     },
     '/api/media/folders': {
@@ -590,6 +675,54 @@ const openapi = {
         example: { name: 'Hero Banner', contentJson: { rows: [] } },
       },
       UpdateComponent: { ...updateSchema(componentFields), example: { contentJson: { rows: [] } } },
+      IntegrationConnections: {
+        type: 'object',
+        required: ['vercel'],
+        properties: {
+          vercel: { oneOf: [schemaRef('IntegrationAccount'), { type: 'null' }] },
+        },
+      },
+      IntegrationAccount: {
+        type: 'object',
+        required: ['provider', 'accountName'],
+        properties: {
+          provider: { type: 'string', enum: ['vercel'] },
+          accountName: { type: 'string' },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      BuilderPublishingResultRecord: {
+        type: 'object',
+        required: ['deployment'],
+        properties: {
+          deployment: schemaRef('VercelDeployment'),
+        },
+      },
+      SaveIntegrationCredential: {
+        type: 'object',
+        required: ['token'],
+        properties: { token: { type: 'string', minLength: 1, writeOnly: true } },
+      },
+      DeployToVercel: {
+        type: 'object',
+        required: ['name', 'pageName', 'jsx'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+          pageName: { type: 'string', minLength: 1 },
+          jsx: { type: 'string', minLength: 1, maxLength: 1000000 },
+        },
+      },
+      VercelDeployment: {
+        type: 'object',
+        required: ['projectId', 'projectUrl', 'deploymentId', 'deploymentState'],
+        properties: {
+          projectId: { type: 'string' },
+          projectUrl: { type: 'string', format: 'uri' },
+          deploymentId: { type: 'string' },
+          deploymentUrl: { type: 'string', format: 'uri', nullable: true },
+          deploymentState: { type: 'string' },
+        },
+      },
       ApiError: {
         type: 'object',
         required: ['error'],
@@ -598,7 +731,7 @@ const openapi = {
             type: 'object',
             required: ['code', 'message'],
             properties: {
-              code: { type: 'string', enum: ['VALIDATION_ERROR', 'INVALID_JSON', 'NOT_FOUND', 'CONFLICT', 'PAYLOAD_TOO_LARGE', 'UNAUTHORIZED', 'INVALID_CREDENTIALS', 'INTERNAL_ERROR'] },
+              code: { type: 'string', enum: ['VALIDATION_ERROR', 'INVALID_JSON', 'NOT_FOUND', 'CONFLICT', 'PAYLOAD_TOO_LARGE', 'UNAUTHORIZED', 'INVALID_CREDENTIALS', 'INTEGRATION_ERROR', 'INTEGRATION_NOT_CONFIGURED', 'INTEGRATION_NOT_CONNECTED', 'INTEGRATION_TOKEN_EXPIRED', 'INTEGRATION_CALLBACK_ERROR', 'INTEGRATION_CREDENTIAL_ERROR', 'INTERNAL_ERROR'] },
               message: { type: 'string' },
             },
           },
@@ -630,6 +763,7 @@ const openapi = {
       NotFound: errorResponse('The resource was not found.', 'NOT_FOUND', 'The requested record was not found.'),
       Conflict: errorResponse('A unique value already exists, a referenced theme is missing, or a theme is still referenced by pages.', 'CONFLICT', 'A record with the provided unique value already exists.'),
       PayloadTooLarge: errorResponse('Request body exceeds the 10 MB limit.', 'PAYLOAD_TOO_LARGE', 'Request body exceeds the 10 MB limit.'),
+      IntegrationError: errorResponse('Vercel rejected the integration request.', 'INTEGRATION_ERROR', 'Integration request failed.'),
       InternalError: errorResponse('An unexpected server error occurred.', 'INTERNAL_ERROR', 'An unexpected server error occurred.'),
     },
   },

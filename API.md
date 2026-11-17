@@ -19,7 +19,7 @@ generator. For a theme/page workflow, create a theme first and replace the
 example `themeId` with its returned ID before creating a page.
 
 The contract is maintained in `server/src/openapi.js`. Update it alongside
-route changes. It documents all health, theme, page, component, and media
+route changes. It documents all health, theme, page, component, media, and integration
 operations in `server/src`, including request/response schemas, examples,
 filters, status codes, and validation rules. The documentation routes
 themselves are not business operations in the contract.
@@ -249,6 +249,55 @@ Updating `contentJson` increments `version`; renaming alone does not.
 
 Deletes a saved component owned by the authenticated user.
 
+## Vercel integration
+
+Integration operations use the user's normal bearer token. The backend stores
+Vercel credentials encrypted with AES-256-GCM; configure
+`INTEGRATION_TOKEN_ENCRYPTION_KEY` with a Base64-encoded random 32-byte key.
+Credentials are never sent to or stored in the browser. Use HTTPS outside
+local development.
+
+### Token settings and connections
+
+- `GET /api/integrations/connections` returns the connected Vercel account name,
+  never credentials.
+- `DELETE /api/integrations/:provider` removes the authenticated user's saved
+  Vercel token.
+- `GET /api/integrations/publishing-results/:documentId` returns that
+  authenticated user's saved deployment details for a Builder document, or
+  `null` when the document has not been deployed.
+- `PUT /api/integrations/publishing-results/:documentId` stores deployment
+  metadata in the database. Records are isolated by user and Builder document
+  ID; provider credentials are not included.
+
+`PUT /api/integrations/credentials/:provider` validates and securely saves a
+Vercel personal access token. The only supported provider is `vercel`. The
+response returns the provider and account name only; the secret is never
+returned. The Settings page submits this request over HTTPS.
+
+### `POST /api/integrations/vercel/deploy`
+
+Creates a Vercel project if needed and starts a production deployment by
+uploading the generated project files directly. The project is deployed from
+the current Builder content without requiring a source-code repository.
+Requires a connected Vercel account:
+
+```json
+{
+  "name": "my-generated-page",
+  "pageName": "MyPage",
+  "jsx": "function MyPage() { return <main>Hello</main> }\\nexport default MyPage;"
+}
+```
+
+The `202` response contains the Vercel project ID, deployment ID and state, and
+the deployment URL when Vercel returns it immediately. A queued deployment may
+not yet have a URL; open the Vercel dashboard to follow its build status.
+The deployment uses a Vite/React/Tailwind scaffold and the generated JSX as
+`src/GeneratedPage.jsx`. JSX must be no larger than 1 MB.
+
+The deployment returns `502 INTEGRATION_ERROR` when Vercel rejects a request.
+
 ## Media assets
 
 Media endpoints require a valid bearer token. Images are stored in the database
@@ -329,12 +378,17 @@ Deletes an image asset owned by the authenticated user.
 
 1. Set `DATABASE_URL` in the project-root `.env` file.
 2. Set `JWT_SECRET` to a random secret of at least 32 bytes.
-3. For PostgreSQL providers requiring a custom CA, set `DATABASE_CA_BASE64` to
+3. Configure `INTEGRATION_TOKEN_ENCRYPTION_KEY` with a Base64-encoded random
+   32-byte key. Generate it with
+   `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`.
+   Keep this key stable or previously saved tokens cannot be decrypted. Keep
+   all credentials server-side; never use a `VITE_` prefix.
+4. For PostgreSQL providers requiring a custom CA, set `DATABASE_CA_BASE64` to
    the Base64-encoded PEM. The API verifies the server certificate and hostname
    when this value is set. It is optional for local databases.
-4. Generate Prisma Client with `npm run db:generate`.
-5. Apply committed migrations with `npm run db:deploy`.
-6. Start the API with `npm run server`.
+5. Generate Prisma Client with `npm run db:generate`.
+6. Apply committed migrations with `npm run db:deploy`.
+7. Start the API with `npm run server`.
 
 The user-scoping migration leaves pre-existing themes and pages unassigned
 (`userId` is null), so they are not visible through the API. Their records are

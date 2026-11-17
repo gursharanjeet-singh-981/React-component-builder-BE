@@ -9,6 +9,7 @@ import componentsRouter from './routes/components.js'
 import themesRouter from './routes/themes.js'
 import authRouter from './routes/auth.js'
 import mediaRouter, { getMediaAssetContent } from './routes/media.js'
+import integrationsRouter from './routes/integrations.js'
 import { requireAuthentication } from './auth-middleware.js'
 import generateHandler from '../../api/generate.js'
 
@@ -30,7 +31,7 @@ app.use(cors({
   origin(origin, callback) {
     callback(null, !origin || allowedOrigins.has(origin.replace(/\/+$/, '')))
   },
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }))
 
 app.use(express.json({ limit: '10mb' }))
@@ -68,6 +69,7 @@ app.use('/api/pages', requireAuthentication, pagesRouter)
 app.use('/api/components', requireAuthentication, componentsRouter)
 app.get('/api/media/:id/content', getMediaAssetContent)
 app.use('/api/media', requireAuthentication, mediaRouter)
+app.use('/api/integrations', requireAuthentication, integrationsRouter)
 
 app.use('/api', (req, res) => {
   res.status(404).json({
