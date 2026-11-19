@@ -8,10 +8,17 @@ const port = Number(process.env.PORT) || 3001
 
 try {
   assertAuthConfiguration()
-  await prisma.$connect()
   const server = app.listen(port, () => {
-    console.log(`Backend listening on http://localhost:${port}; database connected`)
+    console.log(`Backend listening on http://localhost:${port}`)
   })
+
+  prisma.$connect()
+    .then(() => {
+      console.log('Database connected')
+    })
+    .catch((error) => {
+      console.error('Initial database connection warning:', error.message)
+    })
 
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.once(signal, () => {

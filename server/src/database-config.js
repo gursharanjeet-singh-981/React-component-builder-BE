@@ -38,6 +38,13 @@ export function getDatabaseUrl() {
     databaseUrl.searchParams.set('sslrootcert', certificatePath)
   }
 
+  if (!databaseUrl.searchParams.has('connection_limit')) {
+    databaseUrl.searchParams.set('connection_limit', '3')
+  }
+  if (!databaseUrl.searchParams.has('pool_timeout')) {
+    databaseUrl.searchParams.set('pool_timeout', '20')
+  }
+
   return databaseUrl.toString()
 }
 
