@@ -26,11 +26,31 @@ router.get('/', asyncHandler(async (req, res) => {
 }))
 
 router.post('/', asyncHandler(async (req, res) => {
+  const name = requireText(req.body?.name, 'name').trim()
+  const slug = requireText(req.body?.slug, 'slug').trim()
+  const configJson = requireJson(req.body?.configJson, 'configJson')
+
+  const existing = await prisma.theme.findFirst({
+    where: {
+      userId: req.user.id,
+      OR: [
+        { name: { equals: name, mode: 'insensitive' } },
+        { slug: { equals: slug, mode: 'insensitive' } },
+      ],
+    },
+  })
+  if (existing) {
+    if (existing.name.toLowerCase() === name.toLowerCase()) {
+      throw new ApiError(409, 'CONFLICT', `A theme named "${name}" already exists. Please choose a different name.`)
+    }
+    throw new ApiError(409, 'CONFLICT', `A theme with slug "${slug}" already exists. Please choose a different slug.`)
+  }
+
   const theme = await prisma.theme.create({
     data: {
-      name: requireText(req.body?.name, 'name'),
-      slug: requireText(req.body?.slug, 'slug'),
-      configJson: requireJson(req.body?.configJson, 'configJson'),
+      name,
+      slug,
+      configJson,
       userId: req.user.id,
     },
   })
@@ -54,8 +74,8 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 router.patch('/:id', asyncHandler(async (req, res) => {
   const data = {}
-  if (Object.hasOwn(req.body ?? {}, 'name')) data.name = requireText(req.body.name, 'name')
-  if (Object.hasOwn(req.body ?? {}, 'slug')) data.slug = requireText(req.body.slug, 'slug')
+  if (Object.hasOwn(req.body ?? {}, 'name')) data.name = requireText(req.body.name, 'name').trim()
+  if (Object.hasOwn(req.body ?? {}, 'slug')) data.slug = requireText(req.body.slug, 'slug').trim()
   if (Object.hasOwn(req.body ?? {}, 'configJson')) {
     data.configJson = requireJson(req.body.configJson, 'configJson')
   }
@@ -64,6 +84,26 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   }
 
   await requireOwnedTheme(req.params.id, req.user.id)
+
+  if (data.name || data.slug) {
+    const existing = await prisma.theme.findFirst({
+      where: {
+        userId: req.user.id,
+        id: { not: req.params.id },
+        OR: [
+          ...(data.name ? [{ name: { equals: data.name, mode: 'insensitive' } }] : []),
+          ...(data.slug ? [{ slug: { equals: data.slug, mode: 'insensitive' } }] : []),
+        ],
+      },
+    })
+    if (existing) {
+      if (data.name && existing.name.toLowerCase() === data.name.toLowerCase()) {
+        throw new ApiError(409, 'CONFLICT', `A theme named "${data.name}" already exists. Please choose a different name.`)
+      }
+      throw new ApiError(409, 'CONFLICT', `A theme with slug "${data.slug}" already exists. Please choose a different slug.`)
+    }
+  }
+
   const theme = await prisma.theme.update({
     where: { id: req.params.id },
     data,
