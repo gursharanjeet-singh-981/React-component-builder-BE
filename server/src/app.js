@@ -5,6 +5,7 @@ import { prisma } from './database.js'
 import { asyncHandler, handleApiError } from './api-utils.js'
 import openapi from './openapi.js'
 import pagesRouter from './routes/pages.js'
+import projectsRouter from './routes/projects.js'
 import componentsRouter from './routes/components.js'
 import themesRouter from './routes/themes.js'
 import authRouter from './routes/auth.js'
@@ -65,6 +66,7 @@ app.post('/api/generate', asyncHandler(generateHandler))
 
 app.use('/api/auth', authRouter)
 app.use('/api/themes', requireAuthentication, themesRouter)
+app.use('/api/projects', requireAuthentication, projectsRouter)
 app.use('/api/pages', requireAuthentication, pagesRouter)
 app.use('/api/components', requireAuthentication, componentsRouter)
 app.get('/api/media/:id/content', getMediaAssetContent)

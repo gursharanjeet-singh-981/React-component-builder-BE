@@ -44,10 +44,15 @@ const themeFields = {
   slug: { ...text, example: 'brand', description: 'Non-blank theme slug, unique per user. Leading and trailing whitespace is trimmed.' },
   configJson: schemaRef('JsonDocument'),
 }
+const projectFields = {
+  name: { ...text, maxLength: 100, example: 'Marketing Website' },
+  slug: { ...text, maxLength: 63, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', example: 'marketing-website' },
+}
 const pageFields = {
   name: { ...text, example: 'Home' },
-  slug: { ...text, example: 'home', description: 'Non-blank page slug, unique per user. Leading and trailing whitespace is trimmed.' },
+  slug: { ...text, example: 'home', description: 'Non-blank page slug, unique within a project. Standalone page slugs remain unique per user. Leading and trailing whitespace is trimmed.' },
   themeId: { ...text, description: 'ID of a theme owned by the authenticated user.' },
+  projectId: { type: 'string', nullable: true, description: 'Optional ID of a project owned by the authenticated user.' },
   contentJson: schemaRef('JsonDocument'),
   status: schemaRef('PageStatus'),
 }
@@ -77,13 +82,14 @@ const openapi = {
   info: {
     title: 'Component Builder API',
     version: '1.0.0',
-    description: 'API for builder themes, pages, reusable components, and media assets. To try protected endpoints in Swagger: (1) call POST /api/auth/register or POST /api/auth/login with email and password; (2) copy data.accessToken from the response; (3) select Authorize and enter the token (without the word Bearer); (4) call the protected endpoints. Themes, pages, components, and media assets are scoped to their owner; pages can only reference themes owned by the same user. Health and documentation endpoints remain public. Resource responses use a data envelope; errors use an error envelope. JSON request bodies are limited to 10 MB. Create a theme first, then use its ID to create pages.',
+    description: 'API for builder projects, pages, themes, reusable components, and media assets. To try protected endpoints in Swagger: (1) call POST /api/auth/register or POST /api/auth/login with email and password; (2) copy data.accessToken from the response; (3) select Authorize and enter the token (without the word Bearer); (4) call the protected endpoints. Projects, themes, pages, components, and media assets are scoped to their owner; pages can only reference themes and projects owned by the same user. Health and documentation endpoints remain public. Resource responses use a data envelope; errors use an error envelope. JSON request bodies are limited to 10 MB. Create a project, then add themed pages to it.',
   },
   servers: [{ url: '/', description: 'Current host (local development or deployed API)' }],
   tags: [
     { name: 'Health', description: 'Backend and database availability.' },
     { name: 'Authentication', description: 'Email/password registration, login, and profile access and updates.' },
     { name: 'Themes', description: 'Theme configuration and page counts.' },
+    { name: 'Projects', description: 'Project organization and grouped page management.' },
     { name: 'Pages', description: 'Page content, versions, and publishing.' },
     { name: 'Components', description: 'Reusable builder components.' },
     { name: 'Media', description: 'User-owned image assets with folder paths.' },
@@ -202,6 +208,49 @@ const openapi = {
         security: bearerSecurity,
         description: 'Delete the owned theme\'s pages first. A theme referenced by pages cannot be deleted. Other users\' themes are not accessible.',
         responses: { 204: { description: 'Theme deleted. No response body.' }, 409: responseRef('Conflict'), ...authErrors, ...notFound, ...readErrors },
+      },
+    },
+    '/api/projects': {
+      get: {
+        tags: ['Projects'],
+        operationId: 'listProjects',
+        summary: 'List projects',
+        security: bearerSecurity,
+        responses: { 200: dataResponse('Projects with page counts.', 'ProjectWithCount', true), ...authErrors, ...readErrors },
+      },
+      post: {
+        tags: ['Projects'],
+        operationId: 'createProject',
+        summary: 'Create a project',
+        security: bearerSecurity,
+        requestBody: requestBody('CreateProject'),
+        responses: { 201: dataResponse('Project created.', 'ProjectWithCount'), ...authErrors, ...writeErrors },
+      },
+    },
+    '/api/projects/{id}': {
+      parameters: [idParameter],
+      get: {
+        tags: ['Projects'],
+        operationId: 'getProject',
+        summary: 'Get a project and its pages',
+        security: bearerSecurity,
+        responses: { 200: dataResponse('Project with its pages and deployment details.', 'ProjectWithPages'), ...authErrors, ...notFound, ...readErrors },
+      },
+      patch: {
+        tags: ['Projects'],
+        operationId: 'updateProject',
+        summary: 'Update a project',
+        security: bearerSecurity,
+        requestBody: requestBody('UpdateProject'),
+        responses: { 200: dataResponse('Project updated.', 'ProjectWithCount'), ...authErrors, ...writeErrors, ...notFound },
+      },
+      delete: {
+        tags: ['Projects'],
+        operationId: 'deleteProject',
+        summary: 'Delete an empty project',
+        security: bearerSecurity,
+        description: 'Projects containing pages cannot be deleted. Move or delete all pages first.',
+        responses: { 204: { description: 'Project deleted.' }, ...authErrors, ...notFound, 409: responseRef('Conflict'), ...readErrors },
       },
     },
     '/api/pages': {
@@ -416,6 +465,25 @@ const openapi = {
         },
       },
     },
+    '/api/integrations/vercel/deploy-project': {
+      post: {
+        tags: ['Integrations'],
+        operationId: 'deployProjectToVercel',
+        summary: 'Deploy every page in a project to Vercel',
+        security: bearerSecurity,
+        description: 'Requires a connected Vercel account. All current pages must be included. The Vercel project and latest deployment are saved on the owned project.',
+        requestBody: requestBody('DeployProjectToVercel'),
+        responses: {
+          202: dataResponse('Project deployment queued.', 'VercelDeployment'),
+          ...authErrors,
+          400: responseRef('BadRequest'),
+          404: responseRef('NotFound'),
+          413: responseRef('PayloadTooLarge'),
+          502: responseRef('IntegrationError'),
+          ...readErrors,
+        },
+      },
+    },
     '/api/media/folders': {
       get: {
         tags: ['Media'],
@@ -562,9 +630,40 @@ const openapi = {
         required: ['id', 'name', 'slug'],
         properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' }, slug: { type: 'string' } },
       },
+      ProjectSummary: {
+        type: 'object',
+        required: ['id', 'name', 'slug'],
+        properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' }, slug: { type: 'string' } },
+      },
+      Project: {
+        type: 'object',
+        required: ['id', 'name', 'slug', 'deploymentJson', 'createdAt', 'updatedAt'],
+        properties: {
+          id: { type: 'string', format: 'uuid', readOnly: true },
+          ...projectFields,
+          deploymentJson: { type: 'object', nullable: true, additionalProperties: true },
+          ...timestamps,
+        },
+      },
+      ProjectWithCount: {
+        allOf: [schemaRef('Project'), {
+          type: 'object',
+          required: ['_count'],
+          properties: {
+            _count: { type: 'object', required: ['pages'], properties: { pages: { type: 'integer', minimum: 0 } } },
+          },
+        }],
+      },
+      ProjectWithPages: {
+        allOf: [schemaRef('Project'), {
+          type: 'object',
+          required: ['pages'],
+          properties: { pages: { type: 'array', items: schemaRef('PageWithTheme') } },
+        }],
+      },
       Page: {
         type: 'object',
-        required: ['id', 'name', 'slug', 'themeId', 'contentJson', 'status', 'version', 'createdAt', 'updatedAt'],
+        required: ['id', 'name', 'slug', 'themeId', 'projectId', 'contentJson', 'status', 'version', 'createdAt', 'updatedAt'],
         properties: {
           id: { type: 'string', format: 'uuid', readOnly: true },
           ...pageFields,
@@ -573,7 +672,14 @@ const openapi = {
         },
       },
       PageWithTheme: {
-        allOf: [schemaRef('Page'), { type: 'object', required: ['theme'], properties: { theme: schemaRef('ThemeSummary') } }],
+        allOf: [schemaRef('Page'), {
+          type: 'object',
+          required: ['theme', 'project'],
+          properties: {
+            theme: schemaRef('ThemeSummary'),
+            project: { oneOf: [schemaRef('ProjectSummary'), { type: 'null' }] },
+          },
+        }],
       },
       Component: {
         type: 'object',
@@ -661,11 +767,18 @@ const openapi = {
         example: { name: 'Brand', slug: 'brand', configJson: { colors: { primary: '#0055aa' } } },
       },
       UpdateTheme: { ...updateSchema(themeFields), example: { name: 'Updated Brand' } },
+      CreateProject: {
+        type: 'object',
+        required: ['name', 'slug'],
+        properties: projectFields,
+        example: { name: 'Marketing Website', slug: 'marketing-website' },
+      },
+      UpdateProject: { ...updateSchema(projectFields), example: { name: 'Updated Website' } },
       CreatePage: {
         type: 'object',
         required: ['name', 'slug', 'themeId', 'contentJson'],
         properties: { ...pageFields, status: { type: 'string', enum: ['DRAFT', 'PUBLISHED'], default: 'DRAFT' } },
-        example: { name: 'Home', slug: 'home', themeId: 'replace-with-created-theme-id', contentJson: { sections: [] }, status: 'DRAFT' },
+        example: { name: 'Home', slug: 'home', themeId: 'replace-with-created-theme-id', projectId: 'optional-project-id', contentJson: { sections: [] }, status: 'DRAFT' },
       },
       UpdatePage: { ...updateSchema(pageFields), example: { contentJson: { sections: [] } } },
       CreateComponent: {
@@ -710,6 +823,26 @@ const openapi = {
           name: { type: 'string', minLength: 1, maxLength: 100 },
           pageName: { type: 'string', minLength: 1 },
           jsx: { type: 'string', minLength: 1, maxLength: 1000000 },
+        },
+        DeployProjectToVercel: {
+          type: 'object',
+          required: ['projectId', 'pages'],
+          properties: {
+            projectId: { type: 'string', format: 'uuid' },
+            pages: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 50,
+              items: {
+                type: 'object',
+                required: ['pageId', 'jsx'],
+                properties: {
+                  pageId: { type: 'string', format: 'uuid' },
+                  jsx: { type: 'string', minLength: 1, maxLength: 1000000 },
+                },
+              },
+            },
+          },
         },
       },
       VercelDeployment: {

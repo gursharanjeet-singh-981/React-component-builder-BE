@@ -11,15 +11,15 @@ Use your configured port or deployed backend host instead of `localhost:3001`
 when applicable. Swagger UI sends requests to the same host that serves the
 documentation. Expand an operation and select **Try it out** to call the API.
 These calls use the real database, including creates, updates, and deletes.
-Use **Authorize** with a bearer token before trying theme, page, or component
+Use **Authorize** with a bearer token before trying project, theme, page, or component
 operations.
 
 Frontend developers can import the JSON URL into Postman or an OpenAPI client
-generator. For a theme/page workflow, create a theme first and replace the
-example `themeId` with its returned ID before creating a page.
+generator. Create a project and theme first, then use their IDs when creating
+pages that belong to that project.
 
 The contract is maintained in `server/src/openapi.js`. Update it alongside
-route changes. It documents all health, theme, page, component, media, and integration
+route changes. It documents all health, project, theme, page, component, media, and integration
 operations in `server/src`, including request/response schemas, examples,
 filters, status codes, and validation rules. The documentation routes
 themselves are not business operations in the contract.
@@ -153,6 +153,41 @@ Deletes a theme owned by the authenticated user if it has no pages. Returns
 `404 NOT_FOUND` for another user's theme and `409 CONFLICT` while pages still
 reference it (`onDelete: Restrict`).
 
+## Projects
+
+Projects group pages that are built and deployed together. All project
+operations are scoped to the authenticated user.
+
+### `GET /api/projects`
+
+Lists projects with page counts and the latest deployment result.
+
+### `POST /api/projects`
+
+Creates a project. Names must be unique per user. Slugs must be lowercase
+letters and numbers separated by single hyphens, with a maximum length of 63.
+
+```json
+{
+  "name": "Marketing Website",
+  "slug": "marketing-website"
+}
+```
+
+### `GET /api/projects/:id`
+
+Returns a project and all its pages, including page content and the latest
+deployment details.
+
+### `PATCH /api/projects/:id`
+
+Updates the project's `name` and/or `slug`.
+
+### `DELETE /api/projects/:id`
+
+Deletes an empty project. Projects with pages cannot be deleted; move or delete
+their pages first.
+
 ## Pages
 
 ### `GET /api/pages`
@@ -165,13 +200,15 @@ GET /api/pages?themeId=<theme-id>&status=PUBLISHED
 ```
 
 Valid statuses are `DRAFT` and `PUBLISHED`. Each result includes its theme's
-`id`, `name`, and `slug`.
+`id`, `name`, and `slug`, plus its project summary when it belongs to a project.
 
 ### `POST /api/pages`
 
 Creates a page owned by the authenticated user. The referenced theme must
 belong to that same user; a missing or other user's theme returns
-`404 NOT_FOUND`. Page slugs are unique per user.
+`404 NOT_FOUND`. Set the optional `projectId` to associate the page with a
+project owned by that same user. Page slugs are unique within each project;
+standalone page slugs remain unique per user.
 
 Required body:
 
@@ -180,6 +217,7 @@ Required body:
   "name": "Home",
   "slug": "home",
   "themeId": "<theme-id>",
+  "projectId": "<optional-project-id>",
   "contentJson": {
     "sections": []
   },
@@ -196,9 +234,9 @@ Gets one page by its ID, including its theme's `id`, `name`, and `slug`.
 
 ### `PATCH /api/pages/:id`
 
-Updates any subset of `name`, `slug`, `themeId`, `contentJson`, and `status` on
-a page owned by the authenticated user. Any replacement theme must also belong
-to that user. At least one field is required. Updating `contentJson` increments
+Updates any subset of `name`, `slug`, `themeId`, `projectId`, `contentJson`, and `status` on
+a page owned by the authenticated user. Any replacement theme or project must also belong
+to that user. Set `projectId` to `null` to remove the page from its project. At least one field is required. Updating `contentJson` increments
 `version`; other field updates do not.
 
 ### `POST /api/pages/:id/publish`
@@ -297,6 +335,29 @@ The deployment uses a Vite/React/Tailwind scaffold and the generated JSX as
 `src/GeneratedPage.jsx`. JSX must be no larger than 1 MB.
 
 The deployment returns `502 INTEGRATION_ERROR` when Vercel rejects a request.
+
+### `POST /api/integrations/vercel/deploy-project`
+
+Builds all pages in a project into one Vite/React deployment with a route per
+page. The project is created in Vercel on its first deployment and reused for
+later deployments. Project pages need saved content before they can be
+deployed. The backend verifies that every current project page appears exactly
+once and that every page slug is route-safe; JSX is limited to 1 MB per page
+and 4 MB total.
+
+```json
+{
+  "projectId": "<project-id>",
+  "pages": [
+    { "pageId": "<home-page-id>", "jsx": "export default function Home() { return <main>Home</main> }" },
+    { "pageId": "<about-page-id>", "jsx": "export default function About() { return <main>About</main> }" }
+  ]
+}
+```
+
+`/` opens the page with slug `home`, or the first page when no `home` page
+exists. Other pages are available at `/<slug>`. The latest deployment result
+and Vercel project ID are saved to the project record.
 
 ## Media assets
 

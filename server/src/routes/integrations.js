@@ -2,7 +2,10 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { Router } from 'express'
 import { ApiError, asyncHandler, requireText } from '../api-utils.js'
 import { prisma } from '../database.js'
-import { createGeneratedProjectFiles } from '../generated-project.js'
+import {
+  createGeneratedMultiPageProjectFiles,
+  createGeneratedProjectFiles,
+} from '../generated-project.js'
 import { requireAuthentication } from '../auth-middleware.js'
 
 const router = Router()
@@ -299,6 +302,134 @@ router.post('/vercel/deploy', requireAuthentication, asyncHandler(async (req, re
       deploymentState: deployment.readyState || deployment.status || 'QUEUED',
     },
   })
+}))
+
+router.post('/vercel/deploy-project', requireAuthentication, asyncHandler(async (req, res) => {
+  const projectId = requireText(req.body?.projectId, 'projectId')
+  const requestedPages = req.body?.pages
+  if (!Array.isArray(requestedPages) || requestedPages.length < 1 || requestedPages.length > 50) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'pages must contain between 1 and 50 project pages.')
+  }
+
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, userId: req.user.id },
+    include: {
+      pages: {
+        where: { userId: req.user.id },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, name: true, slug: true },
+      },
+    },
+  })
+  if (!project) {
+    throw new ApiError(404, 'NOT_FOUND', 'Project was not found.')
+  }
+  if (project.pages.length === 0) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Add at least one page to the project before deploying.')
+  }
+  if (requestedPages.length !== project.pages.length) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Deploy the complete set of pages currently in the project.')
+  }
+
+  const requestedById = new Map()
+  let totalJsxLength = 0
+  for (const requestedPage of requestedPages) {
+    const pageId = requireText(requestedPage?.pageId, 'pages[].pageId')
+    if (requestedById.has(pageId)) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'A project page was included more than once.')
+    }
+    const jsx = requireText(requestedPage?.jsx, 'pages[].jsx')
+    if (jsx.length > 1_000_000) {
+      throw new ApiError(413, 'PAYLOAD_TOO_LARGE', 'A generated page exceeds the 1 MB deployment limit.')
+    }
+    totalJsxLength += jsx.length
+    requestedById.set(pageId, jsx)
+  }
+  if (totalJsxLength > 4_000_000) {
+    throw new ApiError(413, 'PAYLOAD_TOO_LARGE', 'The generated project exceeds the 4 MB deployment limit.')
+  }
+
+  const pages = project.pages.map((page) => {
+    const jsx = requestedById.get(page.id)
+    if (!jsx) {
+      throw new ApiError(400, 'VALIDATION_ERROR', `Page "${page.name}" is missing from the deployment.`)
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(page.slug)) {
+      throw new ApiError(400, 'VALIDATION_ERROR', `Page "${page.name}" must have a URL slug containing lowercase letters, numbers, and hyphens.`)
+    }
+    return { ...page, jsx }
+  })
+  if (new Set(pages.map((page) => page.slug)).size !== pages.length) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Each page in a project must have a unique URL slug.')
+  }
+
+  const { token } = await requireConnection(req.user.id, 'vercel')
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  const vercelProjectName = `${project.slug}-${project.id}`
+  let vercelProject
+  if (project.vercelProjectId) {
+    vercelProject = { id: project.vercelProjectId, name: vercelProjectName }
+  } else {
+    try {
+      vercelProject = await requestProviderJson(`${vercelApi}/v11/projects`, token, 'Vercel', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: vercelProjectName,
+          framework: 'vite',
+          installCommand: 'npm install',
+          buildCommand: 'npm run build',
+          outputDirectory: 'dist',
+        }),
+      })
+    } catch (error) {
+      if (error.providerStatus === 409) {
+        throw new ApiError(409, 'CONFLICT', 'The Vercel project name is already in use. Change the project slug and try again.')
+      }
+      throw error
+    }
+    await prisma.project.update({
+      where: { id: project.id },
+      data: { vercelProjectId: vercelProject.id },
+    })
+  }
+
+  const projectSettings = {
+    framework: 'vite',
+    installCommand: 'npm install',
+    buildCommand: 'npm run build',
+    outputDirectory: 'dist',
+  }
+  const files = createGeneratedMultiPageProjectFiles(project.slug, pages).map(({ path, content }) => ({
+    file: path,
+    data: content,
+    encoding: 'utf-8',
+  }))
+  const deployment = await requestProviderJson(`${vercelApi}/v13/deployments`, token, 'Vercel', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      name: vercelProject.name || vercelProjectName,
+      project: vercelProject.id,
+      target: 'production',
+      files,
+      projectSettings,
+    }),
+  })
+
+  const result = {
+    projectId: vercelProject.id,
+    projectUrl: 'https://vercel.com/dashboard',
+    deploymentId: deployment.id,
+    deploymentUrl: deployment.url ? `https://${deployment.url}` : null,
+    deploymentState: deployment.readyState || deployment.status || 'QUEUED',
+  }
+  await prisma.project.update({
+    where: { id: project.id },
+    data: { vercelProjectId: vercelProject.id, deploymentJson: result },
+  })
+
+  res.status(202).json({ data: result })
 }))
 
 export default router

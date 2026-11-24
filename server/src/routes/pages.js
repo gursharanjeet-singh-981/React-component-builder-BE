@@ -26,6 +26,14 @@ async function requireOwnedTheme(id, userId) {
   return theme
 }
 
+async function requireOwnedProject(id, userId) {
+  const project = await prisma.project.findFirst({ where: { id, userId } })
+  if (!project) {
+    throw new ApiError(404, 'NOT_FOUND', 'Project was not found.')
+  }
+  return project
+}
+
 function requireStatus(value) {
   if (!pageStatuses.has(value)) {
     throw new ApiError(400, 'VALIDATION_ERROR', 'status must be DRAFT or PUBLISHED.')
@@ -45,7 +53,10 @@ router.get('/', asyncHandler(async (req, res) => {
   const pages = await prisma.page.findMany({
     where,
     orderBy: { createdAt: 'desc' },
-    include: { theme: { select: { id: true, name: true, slug: true } } },
+    include: {
+      theme: { select: { id: true, name: true, slug: true } },
+      project: { select: { id: true, name: true, slug: true } },
+    },
   })
   res.json({ data: pages })
 }))
@@ -53,12 +64,26 @@ router.get('/', asyncHandler(async (req, res) => {
 router.post('/', asyncHandler(async (req, res) => {
   const themeId = requireText(req.body?.themeId, 'themeId')
   await requireOwnedTheme(themeId, req.user.id)
+  const projectId = req.body?.projectId === undefined || req.body.projectId === null
+    ? null
+    : requireText(req.body.projectId, 'projectId')
+  if (projectId) await requireOwnedProject(projectId, req.user.id)
+  const name = requireText(req.body?.name, 'name')
+  const slug = requireText(req.body?.slug, 'slug')
+  const existingPage = await prisma.page.findFirst({
+    where: { userId: req.user.id, projectId, slug },
+    select: { id: true },
+  })
+  if (existingPage) {
+    throw new ApiError(409, 'CONFLICT', `A page with the slug "${slug}" already exists in this ${projectId ? 'project' : 'account'}.`)
+  }
 
   const page = await prisma.page.create({
     data: {
-      name: requireText(req.body?.name, 'name'),
-      slug: requireText(req.body?.slug, 'slug'),
+      name,
+      slug,
       themeId,
+      projectId,
       contentJson: requireJson(req.body?.contentJson, 'contentJson'),
       userId: req.user.id,
       ...(req.body?.status === undefined ? {} : { status: requireStatus(req.body.status) }),
@@ -70,7 +95,10 @@ router.post('/', asyncHandler(async (req, res) => {
 router.get('/:id', asyncHandler(async (req, res) => {
   const page = await prisma.page.findFirst({
     where: { id: req.params.id, userId: req.user.id },
-    include: { theme: { select: { id: true, name: true, slug: true } } },
+    include: {
+      theme: { select: { id: true, name: true, slug: true } },
+      project: { select: { id: true, name: true, slug: true } },
+    },
   })
   if (!page) {
     throw new ApiError(404, 'NOT_FOUND', 'Page was not found.')
@@ -86,6 +114,12 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     data.themeId = requireText(req.body.themeId, 'themeId')
     await requireOwnedTheme(data.themeId, req.user.id)
   }
+  if (Object.hasOwn(req.body ?? {}, 'projectId')) {
+    data.projectId = req.body.projectId === null
+      ? null
+      : requireText(req.body.projectId, 'projectId')
+    if (data.projectId) await requireOwnedProject(data.projectId, req.user.id)
+  }
   if (Object.hasOwn(req.body ?? {}, 'contentJson')) {
     data.contentJson = requireJson(req.body.contentJson, 'contentJson')
     data.version = { increment: 1 }
@@ -95,7 +129,23 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'VALIDATION_ERROR', 'Provide at least one field to update.')
   }
 
-  await requireOwnedPage(req.params.id, req.user.id)
+  const currentPage = await requireOwnedPage(req.params.id, req.user.id)
+  if (Object.hasOwn(data, 'slug') || Object.hasOwn(data, 'projectId')) {
+    const targetSlug = data.slug || currentPage.slug
+    const targetProjectId = Object.hasOwn(data, 'projectId') ? data.projectId : currentPage.projectId
+    const duplicatePage = await prisma.page.findFirst({
+      where: {
+        userId: req.user.id,
+        projectId: targetProjectId,
+        slug: targetSlug,
+        id: { not: req.params.id },
+      },
+      select: { id: true },
+    })
+    if (duplicatePage) {
+      throw new ApiError(409, 'CONFLICT', `A page with the slug "${targetSlug}" already exists in this ${targetProjectId ? 'project' : 'account'}.`)
+    }
+  }
   const page = await prisma.page.update({
     where: { id: req.params.id },
     data,
