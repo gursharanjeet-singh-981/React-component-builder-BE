@@ -32,6 +32,7 @@ model User {
   createdAt    DateTime @default(now())
 
   themes     Theme[]
+  projects   Project[]
   pages      Page[]
   components Component[]
   mediaAssets MediaAsset[]
@@ -95,12 +96,31 @@ model MediaAsset {
   @@index([userId, createdAt])
 }
 
+model Project {
+  id                 String   @id @default(uuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name               String
+  slug               String
+  vercelProjectId    String?
+  deploymentJson     Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  pages              Page[]
+
+  @@unique([userId, slug])
+  @@index([userId, createdAt])
+}
+
 model Page {
   id     String  @id @default(uuid())
   userId String?
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
   name   String
   slug   String
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   themeId String
   theme   Theme  @relation(fields: [themeId], references: [id], onDelete: Restrict)
@@ -112,7 +132,8 @@ model Page {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([userId, slug])
+  // Partial unique indexes are managed in SQL migrations to scope slugs by project.
+  @@index([projectId])
 }
 
 model Component {
