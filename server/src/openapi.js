@@ -126,6 +126,52 @@ const openapi = {
         },
       },
     },
+    '/api/auth/forgot-password': {
+      post: {
+        tags: ['Authentication'],
+        operationId: 'requestPasswordReset',
+        summary: 'Send a password reset link',
+        description: 'Always returns the same accepted response for valid email addresses to avoid disclosing whether an account exists. Reset links expire after 30 minutes and requests are limited to one email per account per minute. Configure SMTP and APP_BASE_URL on the server.',
+        requestBody: requestBody('ForgotPasswordRequest'),
+        responses: {
+          202: dataResponse('Request accepted; if the address belongs to an account, a reset link will be sent.', 'PasswordResetMessage'),
+          400: responseRef('BadRequest'),
+          503: {
+            description: 'SMTP is not configured or could not deliver the message.',
+            content: {
+              'application/json': {
+                schema: schemaRef('ApiError'),
+                examples: {
+                  notConfigured: {
+                    summary: 'SMTP is not configured',
+                    value: { error: { code: 'EMAIL_NOT_CONFIGURED', message: 'Password reset email is not configured on the server.' } },
+                  },
+                  deliveryFailed: {
+                    summary: 'Email delivery failed',
+                    value: { error: { code: 'EMAIL_DELIVERY_FAILED', message: 'Unable to send a password reset email right now. Please try again later.' } },
+                  },
+                },
+              },
+            },
+          },
+          ...readErrors,
+        },
+      },
+    },
+    '/api/auth/reset-password': {
+      post: {
+        tags: ['Authentication'],
+        operationId: 'resetPassword',
+        summary: 'Set a new password with a reset token',
+        description: 'Consumes the emailed, single-use token and updates the password. Tokens expire after 30 minutes.',
+        requestBody: requestBody('ResetPasswordRequest'),
+        responses: {
+          200: dataResponse('Password updated.', 'PasswordResetMessage'),
+          400: responseRef('BadRequest'),
+          ...readErrors,
+        },
+      },
+    },
     '/api/auth/me': {
       get: {
         tags: ['Authentication'],
@@ -590,6 +636,26 @@ const openapi = {
         },
         example: { email: 'user@example.com', password: 'strong-password' },
       },
+      ForgotPasswordRequest: {
+        type: 'object',
+        required: ['email'],
+        properties: { email: { type: 'string', format: 'email', maxLength: 254 } },
+        example: { email: 'user@example.com' },
+      },
+      ResetPasswordRequest: {
+        type: 'object',
+        required: ['token', 'password'],
+        properties: {
+          token: { type: 'string', minLength: 64, maxLength: 64 },
+          password: { type: 'string', minLength: 8, maxLength: 256, writeOnly: true },
+        },
+        example: { token: 'replace-with-the-token-from-the-email', password: 'a-new-strong-password' },
+      },
+      PasswordResetMessage: {
+        type: 'object',
+        required: ['message'],
+        properties: { message: { type: 'string' } },
+      },
       AuthSession: {
         type: 'object',
         required: ['user', 'accessToken', 'tokenType', 'expiresIn'],
@@ -864,7 +930,7 @@ const openapi = {
             type: 'object',
             required: ['code', 'message'],
             properties: {
-              code: { type: 'string', enum: ['VALIDATION_ERROR', 'INVALID_JSON', 'NOT_FOUND', 'CONFLICT', 'PAYLOAD_TOO_LARGE', 'UNAUTHORIZED', 'INVALID_CREDENTIALS', 'INTEGRATION_ERROR', 'INTEGRATION_NOT_CONFIGURED', 'INTEGRATION_NOT_CONNECTED', 'INTEGRATION_TOKEN_EXPIRED', 'INTEGRATION_CALLBACK_ERROR', 'INTEGRATION_CREDENTIAL_ERROR', 'INTERNAL_ERROR'] },
+              code: { type: 'string', enum: ['VALIDATION_ERROR', 'INVALID_JSON', 'NOT_FOUND', 'CONFLICT', 'PAYLOAD_TOO_LARGE', 'UNAUTHORIZED', 'INVALID_CREDENTIALS', 'INVALID_RESET_TOKEN', 'EMAIL_NOT_CONFIGURED', 'EMAIL_DELIVERY_FAILED', 'INTEGRATION_ERROR', 'INTEGRATION_NOT_CONFIGURED', 'INTEGRATION_NOT_CONNECTED', 'INTEGRATION_TOKEN_EXPIRED', 'INTEGRATION_CALLBACK_ERROR', 'INTEGRATION_CREDENTIAL_ERROR', 'INTERNAL_ERROR'] },
               message: { type: 'string' },
             },
           },

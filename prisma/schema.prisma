@@ -39,6 +39,16 @@ model User {
   mediaFolders MediaFolder[]
   integrations IntegrationConnection[]
   publishingResults BuilderPublishingResult[]
+  passwordResetToken PasswordResetToken?
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 model BuilderPublishingResult {

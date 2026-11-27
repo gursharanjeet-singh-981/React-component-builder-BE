@@ -18,6 +18,7 @@
     "cors": "^2.8.6",
     "express": "^4.22.3",
     "jose": "^6.2.13",
+    "nodemailer": "^10.6.1",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {

@@ -1,7 +1,12 @@
+import { createHash, randomBytes } from 'node:crypto'
 import { Router } from 'express'
 import { prisma } from '../database.js'
 import { ApiError, asyncHandler, requireText } from '../api-utils.js'
 import { requireAuthentication } from '../auth-middleware.js'
+import {
+  assertPasswordResetEmailConfiguration,
+  sendPasswordResetEmail,
+} from '../password-reset-mailer.js'
 import {
   assertAuthConfiguration,
   createAccessToken,
@@ -11,6 +16,9 @@ import {
 
 const router = Router()
 const maxProfileImageBytes = 2 * 1024 * 1024
+const resetTokenLifetimeMs = 30 * 60 * 1000
+const resetEmailCooldownMs = 60 * 1000
+const resetRequestMessage = 'If an account exists for that email, a password reset link will be sent.'
 
 function requireEmail(value) {
   const email = requireText(value, 'email').toLowerCase()
@@ -25,6 +33,10 @@ function requirePassword(value) {
     throw new ApiError(400, 'VALIDATION_ERROR', 'password must be a non-empty string.')
   }
   return value
+}
+
+function hashResetToken(token) {
+  return createHash('sha256').update(token).digest('hex')
 }
 
 function userResponse(user) {
@@ -72,6 +84,92 @@ router.post('/login', asyncHandler(async (req, res) => {
       expiresIn: 3600,
     },
   })
+}))
+
+router.post('/forgot-password', asyncHandler(async (req, res) => {
+  const email = requireEmail(req.body?.email)
+  assertPasswordResetEmailConfiguration()
+  const user = await prisma.user.findUnique({ where: { email }, select: { id: true } })
+
+  if (user) {
+    const now = new Date()
+    const existingToken = await prisma.passwordResetToken.findUnique({
+      where: { userId: user.id },
+      select: { createdAt: true },
+    })
+
+    if (!existingToken || now.getTime() - existingToken.createdAt.getTime() >= resetEmailCooldownMs) {
+      const token = randomBytes(32).toString('hex')
+      const tokenHash = hashResetToken(token)
+      const resetToken = await prisma.passwordResetToken.upsert({
+        where: { userId: user.id },
+        create: {
+          userId: user.id,
+          tokenHash,
+          expiresAt: new Date(now.getTime() + resetTokenLifetimeMs),
+        },
+        update: {
+          tokenHash,
+          expiresAt: new Date(now.getTime() + resetTokenLifetimeMs),
+          createdAt: now,
+        },
+      })
+
+      try {
+        await sendPasswordResetEmail(email, token)
+      } catch (error) {
+        console.error('Password reset email delivery failed:', error)
+        try {
+          await prisma.passwordResetToken.deleteMany({
+            where: { id: resetToken.id, tokenHash },
+          })
+        } catch (cleanupError) {
+          console.error('Failed to remove an undelivered password reset token:', cleanupError)
+        }
+        throw new ApiError(
+          503,
+          'EMAIL_DELIVERY_FAILED',
+          'Unable to send a password reset email right now. Please try again later.',
+        )
+      }
+    }
+  }
+
+  res.status(202).json({ data: { message: resetRequestMessage } })
+}))
+
+router.post('/reset-password', asyncHandler(async (req, res) => {
+  const token = requireText(req.body?.token, 'token')
+  const password = requirePassword(req.body?.password)
+  if (!/^[\da-f]{64}$/i.test(token)) {
+    throw new ApiError(400, 'INVALID_RESET_TOKEN', 'The password reset link is invalid or expired.')
+  }
+  if (password.length < 8 || password.length > 256) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'password must be between 8 and 256 characters.')
+  }
+
+  const tokenHash = hashResetToken(token)
+  const resetToken = await prisma.passwordResetToken.findUnique({ where: { tokenHash } })
+  if (!resetToken || resetToken.expiresAt <= new Date()) {
+    throw new ApiError(400, 'INVALID_RESET_TOKEN', 'The password reset link is invalid or expired.')
+  }
+
+  const passwordHash = await hashPassword(password)
+  const now = new Date()
+  await prisma.$transaction(async (transaction) => {
+    const deleted = await transaction.passwordResetToken.deleteMany({
+      where: { id: resetToken.id, expiresAt: { gt: now } },
+    })
+    if (deleted.count !== 1) {
+      throw new ApiError(400, 'INVALID_RESET_TOKEN', 'The password reset link is invalid or expired.')
+    }
+    await transaction.user.update({
+      where: { id: resetToken.userId },
+      data: { passwordHash },
+    })
+  })
+
+  res.json({ data: { message: 'Password updated successfully.' } })
 }))
 
 router.get('/me', requireAuthentication, (req, res) => {

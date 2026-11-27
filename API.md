@@ -52,6 +52,21 @@ bytes. For example, generate one with
 `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`.
 Keep it private and use the same value across backend instances.
 
+Configure SMTP and the frontend origin to enable password reset:
+
+```env
+APP_BASE_URL=https://app.example.com
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-smtp-username
+SMTP_PASS=your-smtp-password
+SMTP_FROM=Compify <no-reply@example.com>
+```
+
+Keep SMTP credentials server-side. The reset email link expires after 30
+minutes, is single-use, and can be requested once per account per minute.
+
 ### `POST /api/auth/register`
 
 Creates an account and returns a bearer access token. Email addresses are
@@ -73,6 +88,36 @@ returns `409 CONFLICT`.
 
 Accepts the same email/password body and returns the same token response.
 Incorrect credentials return `401 INVALID_CREDENTIALS`.
+
+### `POST /api/auth/forgot-password`
+
+Requests a password reset email:
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+Returns `202` with the same generic message whether or not the email belongs to
+an account. Configure SMTP settings above; incomplete settings return
+`503 EMAIL_NOT_CONFIGURED`. SMTP delivery failures return
+`503 EMAIL_DELIVERY_FAILED`.
+
+### `POST /api/auth/reset-password`
+
+Consumes the single-use token from the email and updates the account password:
+
+```json
+{
+  "token": "<token-from-reset-link>",
+  "password": "a-new-password"
+}
+```
+
+Passwords must be between 8 and 256 characters. Expired, invalid, or previously
+used tokens return `400 INVALID_RESET_TOKEN`. After a successful reset, sign in
+with the new password using `POST /api/auth/login`.
 
 ### `GET /api/auth/me`
 

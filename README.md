@@ -42,6 +42,12 @@ example, generate one with
 `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`).
 Restart `npm run server` after changing environment variables.
 
+To enable password reset emails, configure `APP_BASE_URL` to the frontend
+origin and set `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`,
+and `SMTP_FROM` in the backend `.env`. Keep SMTP credentials private and
+server-side. Reset links expire after 30 minutes. See [API.md](./API.md) for
+the request and reset endpoint details.
+
 For local frontend development, the API allows `http://localhost:5173` and
 `http://127.0.0.1:5173` by default when `NODE_ENV` is not `production`. Set
 `CORS_ORIGINS` to a comma-separated list of exact frontend origins for other
